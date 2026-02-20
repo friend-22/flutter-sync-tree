@@ -1,6 +1,6 @@
 name: flutter_sync_tree
 description: A high-performance, hierarchical synchronization framework with weighted progress and throttling for Flutter.
-version: 1.0.0
+version: 1.0.1
 homepage: https://github.com/friend-22/flutter-sync-tree
 repository: https://github.com/friend-22/flutter-sync-tree
 issue_tracker: https://github.com/friend-22/flutter-sync-tree/issues
