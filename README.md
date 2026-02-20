@@ -135,7 +135,7 @@ takes up 99.9% of the progress bar weight.
 ## 👨‍💻 Author
 **LeeCNet**
 
-Email: jw.leec.test@gmail.com
+Email: jack.leecnet@gmail.com
 
 Github: https://github.com/friend-22/flutter-sync-tree
 
