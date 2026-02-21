@@ -2,17 +2,40 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
 /// Defines the various states of a synchronization process.
-enum SyncType { none, start, progress, error, complete, pause, stop }
+enum SyncStatus {
+  /// Initial state before any operation.
+  none,
 
-/// Configuration for retry logic when a sync task fails.
+  /// Triggered when the sync process starts.
+  start,
+
+  /// Triggered during active data processing with progress updates.
+  progress,
+
+  /// Triggered when an unrecoverable error occurs.
+  error,
+
+  /// Triggered when the task or entire tree completes successfully.
+  complete,
+
+  /// Triggered when the sync is manually paused.
+  pause,
+
+  /// Triggered when the sync is stopped and resources are cleaned up.
+  stop
+}
+
+/// Configuration for retry logic with exponential backoff.
 class RetryConfig {
-  /// Maximum number of retry attempts.
+  /// Maximum number of retry attempts before throwing an error.
   final int maxTryCount;
 
   /// Base delay in milliseconds for exponential backoff.
+  ///
+  /// The actual delay increases with each attempt: (lazyDelayMs * 2^tries).
   final int lazyDelayMs;
 
-  /// Total time allowed for a single sync attempt.
+  /// Total time allowed for a single synchronization attempt.
   final Duration timeout;
 
   const RetryConfig({
@@ -22,10 +45,15 @@ class RetryConfig {
   });
 }
 
-/// Configuration for throttling UI/stream updates to prevent performance bottlenecks.
+/// Configuration for throttling progress updates to optimize UI performance.
 class ThrottlerConfig {
+  /// Minimum progress change (0.0 to 1.0) required to trigger an update.
   final double threshold;
+
+  /// Floating point precision for progress comparisons.
   final double precision;
+
+  /// Minimum time interval between consecutive updates.
   final Duration duration;
 
   const ThrottlerConfig({
@@ -35,21 +63,31 @@ class ThrottlerConfig {
   });
 }
 
+/// Callback for reporting an individual synchronization operation (e.g., 'add', 'update').
 typedef OnSyncOper = Future<void> Function(String oper);
-typedef OnSyncNotify = void Function(SyncType type, SyncNode child);
 
-/// Utility for logging sync events with tree/leaf differentiation.
+/// Callback for listening to synchronization lifecycle events.
+///
+/// [type] is the event category, and [origin] is the node where the event started.
+typedef OnSyncNotify = void Function(SyncStatus type, SyncNode child);
+
+/// Utility for logging synchronization events with tree and leaf differentiation.
 class SyncPrint {
+  /// Global toggle for tree-level (Composite) logs.
   static bool enableTree = true;
+
+  /// Global toggle for leaf-level (Individual task) logs.
   static bool enableLeaf = true;
 
+  /// Logs a message from a [SyncComposite].
   static void fromTree(String key, String message) {
     if (!SyncPrint.enableTree) return;
-    debugPrint('Tree: key:$key, $message');
+    debugPrint('🌲 [Tree:$key] $message');
   }
 
+  /// Logs a message from a [SyncLeaf].
   static void fromLeaf(String key, String message) {
     if (!SyncPrint.enableLeaf) return;
-    debugPrint('Leaf: key:$key, $message');
+    debugPrint('🍃 [Leaf:$key] $message');
   }
 }

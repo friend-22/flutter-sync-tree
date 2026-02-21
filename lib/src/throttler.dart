@@ -1,21 +1,22 @@
 /// A utility class to throttle updates based on value changes and time intervals.
 ///
-/// It ensures that [onUpdate] is only called if a significant change has occurred
-/// ([threshold]) and a minimum amount of time has passed ([duration]).
+/// It prevents performance bottlenecks by ensuring that [onUpdate] is only
+/// triggered when a significant change occurs ([threshold]) or
+/// a specific [duration] has passed.
 class Throttler<T> {
-  /// The minimum change in value required to trigger an update.
+  /// The minimum progress change (0.0 to 1.0) required to trigger an update.
   final double threshold;
 
   /// The minimum time interval required between updates.
   final Duration duration;
 
-  /// The maximum possible value (e.g., 1.0 for progress or volume).
+  /// The maximum value (typically 1.0) representing task completion.
   final double maxValue;
 
-  /// Used to handle floating-point rounding errors when checking for completion.
+  /// Tolerance for floating-point comparisons.
   final double precision;
 
-  /// The callback triggered when the throttle conditions are met.
+  /// Callback triggered when throttle conditions are met.
   final void Function(double value, T? extra) onUpdate;
 
   double _lastValue = -1.0;
@@ -29,33 +30,31 @@ class Throttler<T> {
     required this.onUpdate,
   });
 
-  /// Preset for high-frequency updates (approx. 60 frames per second).
-  Throttler.fps60({
-    this.threshold = 0.01,
-    this.maxValue = 1.0,
-    this.duration = const Duration(milliseconds: 16),
-    this.precision = 1e-6,
-    required this.onUpdate,
-  });
+  /// Factory for high-frequency updates (~60 FPS), ideal for smooth animations.
+  factory Throttler.fps60({required void Function(double, T?) onUpdate}) =>
+      Throttler(
+        threshold: 0.005,
+        duration: const Duration(milliseconds: 16),
+        onUpdate: onUpdate,
+      );
 
-  /// Preset for medium-frequency updates (approx. 30 frames per second).
-  Throttler.fps30({
-    this.threshold = 0.01,
-    this.maxValue = 1.0,
-    this.duration = const Duration(milliseconds: 32),
-    this.precision = 1e-6,
-    required this.onUpdate,
-  });
+  /// Factory for standard updates (~30 FPS), good balance between performance and smoothness.
+  factory Throttler.fps30({required void Function(double, T?) onUpdate}) =>
+      Throttler(
+        threshold: 0.01,
+        duration: const Duration(milliseconds: 32),
+        onUpdate: onUpdate,
+      );
 
-  /// Evaluates the new [value] and triggers [onUpdate] if logic allows.
+  /// Evaluates the new [value] and triggers [onUpdate] if conditions are met.
   void update(double value, [T? extra]) {
     final now = DateTime.now();
 
-    // 1. Forced Completion Check
-    // If value reaches maxValue, we always update once and then stop.
+    // 1. Completion Logic
+    // Ensures that reaching the [maxValue] always triggers an update once.
     final bool isCompleted = value >= (maxValue - precision);
     if (isCompleted) {
-      if (_lastValue >= maxValue) return; // Already reported completion
+      if (_lastValue >= (maxValue - precision)) return;
 
       _lastValue = maxValue;
       _lastUpdateTime = now;
@@ -63,28 +62,29 @@ class Throttler<T> {
       return;
     }
 
-    // 2. Threshold & Time Gating
+    // 2. Threshold & Time-based Gating
     final delta = (value - _lastValue).abs();
-    final timeDelta = now.difference(_lastUpdateTime);
+    final timeSinceLastUpdate = now.difference(_lastUpdateTime);
 
-    // Only update if the value has changed enough AND enough time has passed.
-    if (delta >= threshold && timeDelta >= duration) {
+    // Update only if BOTH threshold is crossed AND duration has passed.
+    if (delta >= threshold && timeSinceLastUpdate >= duration) {
       _lastValue = value;
       _lastUpdateTime = now;
       onUpdate(value, extra);
     }
   }
 
-  /// Resets the throttler state, allowing the next update to pass immediately.
+  /// Resets the throttler state to its initial values.
   void reset() {
     _lastValue = -1.0;
     _lastUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  /// Manually forces an update to the [maxValue] regardless of conditions.
+  /// Immediately forces an update with the [maxValue].
   void flush([T? extra]) {
+    final now = DateTime.now();
     _lastValue = maxValue;
-    _lastUpdateTime = DateTime.now();
+    _lastUpdateTime = now;
     onUpdate(maxValue, extra);
   }
 }
