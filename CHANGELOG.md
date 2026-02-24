@@ -1,3 +1,17 @@
+## 1.0.3
+* **🚀 Performance & UI Optimization**
+    * Added `Throttler` to `SyncComposite` to aggregate high-frequency progress events from multiple child nodes.
+    * Prevents UI jank by ensuring the root progress only updates at meaningful intervals (configured via `ThrottlerConfig`).
+
+* **📊 Documentation & Clarity**
+    * Fixed: Replaced LaTeX math formulas in README with high-compatibility ASCII diagrams for better rendering on pub.dev and GitHub.
+    * Improved: Enhanced package metadata and description for better discoverability.
+    * Added: Detailed "Sample in Action" section to explain hierarchical sync logic.
+
+* **🐞 Bug Fixes & Refactoring**
+    * Fixed: Corrected method naming in example code (`getTotalCount`) for consistency with the base class.
+    * Improved: Enhanced lifecycle management in `SyncLeaf` to ensure safe stream subscription handling.
+
 ## 1.0.2
 
 ### 🔄 Breaking Changes

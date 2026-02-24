@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
-/// The base abstract class for all synchronization units (Leaf or Composite).
+/// The base abstract class for all synchronization units, including Leaves and Composites.
 ///
-/// It defines the standard lifecycle: start, stop, pause, and resume,
-/// and provides a broadcast stream for real-time event monitoring.
+/// It establishes the standard lifecycle (start, stop, pause, resume)
+/// and provides a broadcast stream for real-time monitoring of the sync tree.
 abstract class SyncNode with SyncGetter {
+  /// A unique identifier for the node, used for logging and searching.
   final String? key;
+
   final _syncController = StreamController<(SyncStatus, SyncNode)>.broadcast();
   final List<StreamSubscription> _internalSubs = [];
   SyncStatus _status = SyncStatus.none;
@@ -19,31 +21,46 @@ abstract class SyncNode with SyncGetter {
 
   /// A broadcast stream that emits synchronization events.
   ///
-  /// Each event is a record containing:
-  /// - [SyncStatus]: The state of the sync (e.g., start, progress, error).
-  /// - [SyncNode]: The node where the event originated (useful for tree tracking).
+  /// Each event is a record (tuple) containing:
+  /// - [SyncStatus]: The new state of the node.
+  /// - [SyncNode]: The origin node where the event was triggered.
   Stream<(SyncStatus, SyncNode)> get events => _syncController.stream;
 
-  /// Starts the synchronization process for this node.
-  Future<void> start();
+  /// Releases all active resources, cancels subscriptions, and closes the event stream.
+  Future<void> dispose() async {
+    await stop();
 
-  /// Stops the synchronization and releases all active resources and subscriptions.
-  Future<void> stop() async {
-    notify(SyncStatus.stop);
-    await _cleanup();
-    if (!_syncController.isClosed) _syncController.close();
+    for (var sub in _internalSubs) {
+      await sub.cancel();
+    }
+    _internalSubs.clear();
+
+    if (!_syncController.isClosed) {
+      await _syncController.close();
+    }
   }
 
-  /// Suspends the current synchronization task.
+  /// Initiates the synchronization process for this node.
+  Future<void> start() async {
+    notify(SyncStatus.idle);
+    SyncPrint.fromLeaf('$key', 'Idle');
+  }
+
+  /// Terminates the synchronization and transitions the state to [SyncStatus.stop].
+  Future<void> stop() async {
+    notify(SyncStatus.stop);
+  }
+
+  /// Suspends the current synchronization task without releasing resources.
   void pause();
 
-  /// Resumes a paused synchronization task.
+  /// Resumes a previously paused synchronization task.
   void resume();
 
-  /// Broadcasts a status change to all listeners.
+  /// Broadcasts a status change to all subscribers.
   ///
-  /// The [origin] parameter allows re-broadcasting events from child nodes
-  /// while preserving the information of where the event started.
+  /// The [origin] parameter allows parent nodes to re-broadcast child events
+  /// while preserving the identity of the node where the event first occurred.
   void notify(SyncStatus status, {SyncNode? origin}) {
     _status = status;
     if (!_syncController.isClosed) {
@@ -51,50 +68,51 @@ abstract class SyncNode with SyncGetter {
     }
   }
 
-  /// Attaches a listener to the [events] stream.
+  /// Attaches a listener to the [events] stream for lifecycle monitoring.
   ///
-  /// Subscriptions are managed internally and cancelled automatically on [stop].
+  /// Subscriptions are managed internally and are automatically cleaned up on [dispose].
   void listen(OnSyncNotify onNotify) {
     final sub = _syncController.stream.listen((event) {
       onNotify(event.$1, event.$2);
     });
     _internalSubs.add(sub);
   }
-
-  /// Cancels all internal stream subscriptions.
-  Future<void> _cleanup() async {
-    for (var sub in _internalSubs) {
-      await sub.cancel();
-    }
-    _internalSubs.clear();
-  }
 }
 
-/// A mixin providing derived state logic based on the core sync properties.
+/// A mixin providing derived state logic and boolean flags for [SyncNode].
 mixin SyncGetter {
-  /// The current statistical summary of the synchronization.
+  /// Returns the current cumulative statistical summary.
   SyncSummary get summary;
 
-  /// The progress ratio from 0.0 to 1.0.
+  /// Returns the total number of items to be synchronized.
+  int get totalCount;
+
+  /// Returns the number of items successfully processed.
+  int get completedCount;
+
+  /// Returns the overall progress as a ratio between 0.0 and 1.0.
   double get progress;
 
-  /// An optional error or status message.
+  /// Returns an optional error or status message associated with the node.
   String? get message;
 
-  /// The current state in the [SyncStatus] lifecycle.
+  /// Returns the current lifecycle state.
   SyncStatus get status;
 
-  bool get isSyncing =>
-      status == SyncStatus.start || status == SyncStatus.progress;
-  bool get isComplete => status == SyncStatus.complete;
+  bool get isIdle => status == SyncStatus.idle;
+  bool get isSyncing => status == SyncStatus.start || status == SyncStatus.progress;
+  bool get isCompleted => status == SyncStatus.complete;
   bool get isPaused => status == SyncStatus.pause;
-  bool get hasError => (message != null);
+  bool get isStopped => status == SyncStatus.stop;
+
+  /// Returns true if a message is present, typically indicating an error or warning.
+  bool get hasMessage => (message != null);
 }
 
-/// Manages the mutable state of an individual sync task during its execution.
+/// A mutable state container that tracks progress and statistics for a single task.
 ///
-/// It tracks total counts, completed items, and uses a [Throttler] to
-/// prevent UI jank from excessive progress updates.
+/// It utilizes a [Throttler] to regulate progress updates, preventing
+/// UI performance degradation from high-frequency events.
 class SyncTaskState {
   int total = 0;
   int completed = 0;
@@ -103,9 +121,9 @@ class SyncTaskState {
   String? message;
   late Throttler<SyncNode?> throttler;
 
-  /// Initializes the throttler to limit progress update frequency.
+  /// Initializes the [Throttler] with the provided [config].
   ///
-  /// [config] determines how often [onUpdate] is triggered.
+  /// [onUpdate] is called when the throttler's conditions (time/threshold) are met.
   void setup(ThrottlerConfig config, void Function(SyncNode?) onUpdate) {
     throttler = Throttler(
       threshold: config.threshold,
@@ -114,13 +132,12 @@ class SyncTaskState {
       onUpdate: (p, node) {
         progress = p;
         onUpdate(node);
-        SyncPrint.fromLeaf('${node?.key}',
-            'Progress updated: ${(progress * 100).toStringAsFixed(1)}%');
+        SyncPrint.fromLeaf('${node?.key}', 'Progress: ${(progress * 100).toStringAsFixed(1)}%');
       },
     );
   }
 
-  /// Resets the state to its initial empty values.
+  /// Resets the internal state to initial values.
   void reset() {
     total = 0;
     completed = 0;
@@ -130,31 +147,32 @@ class SyncTaskState {
     throttler.reset();
   }
 
-  /// Sets the total number of items to sync and initializes the [summary].
+  /// Configures the total item count and prepares the initial [summary].
   void setTotal(int count) {
     total = count;
     summary = SyncSummary({SyncSummary.total: count});
   }
 
-  /// Increments progress and updates the summary for a specific operation [oper].
+  /// Increments progress and updates the statistics for a specific operation.
   ///
-  /// Note: [SyncSummary.recover] operations are tracked in the summary but
-  /// do not increment the [completed] progress, as they represent
-  /// data reconciliation rather than standard task completion.
-  void step(String oper, SyncNode node) {
-    summary = summary + oper;
+  /// Operations with [SyncSummary.recover] are recorded in the summary but
+  /// do not advance the [completed] count, as they represent data
+  /// reconciliation rather than progress on new work.
+  void step(String oper, SyncNode node, {int count = 1}) {
+    for (int i = 0; i < count; i++) {
+      summary = summary + oper;
+    }
 
-    // 'Recover' represents healing existing data, so it doesn't
-    // contribute to the progress of 'new' work being done.
     if (oper != SyncSummary.recover) {
-      completed++;
+      completed += count;
       progress = total > 0 ? completed / total : 0.0;
       throttler.update(progress, node);
     }
   }
 
-  /// Forces the throttler to emit the current state immediately.
-  /// Usually called when a task completes to ensure the final 1.0 is sent.
+  /// Forces the throttler to push the current state immediately.
+  ///
+  /// Typically called upon task completion to ensure the final 1.0 (100%) progress is emitted.
   void flush(SyncNode node) {
     throttler.flush(node);
   }

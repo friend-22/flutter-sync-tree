@@ -31,6 +31,19 @@ Perfect for applications handling large-scale real-time data (like Firebase Clou
 * **SyncLeaf**: The worker node for actual data processing (e.g., Firestore → Local DB).
 * **SyncComposite**: The coordinator node that aggregates children and calculates overall progress.
 
+
+Throttled Sync Tree follows the **Composite Design Pattern**. Every task is a `SyncNode`, allowing you to build deeply nested synchronization logic that remains easy to manage.
+
+```text
+Root (SyncComposite)
+ ├── Primary Phase (Parallel)
+ │    ├── UserProfile (SyncLeaf) ── 100 items (High Weight ⚖️)
+ │    └── AppSettings (SyncLeaf) ── 1 item    (Low Weight  ⚖️)
+ └── Late Phase (Sequential/Parallel)
+      └── PhotoGallery (SyncComposite)
+           ├── AlbumMetadata (SyncLeaf)
+           └── HighResImages (SyncLeaf)
+```
 -----
 
 ## 🚀 Getting Started
@@ -41,10 +54,26 @@ Extend `SyncLeaf` or `FirebaseSyncLeaf` to implement your logic. Use `onSyncOper
 
 ```dart
 class UserProfileSync extends SyncLeaf<List<Map<String, dynamic>>> {
-  UserProfileSync() : super(key: 'user_profile');
+  final Stream<List<Map<String, dynamic>>> stream;
+  StreamSubscription<List<Map<String, dynamic>>>? _sub;
+  
+  UserProfileSync(this.stream) : super(key: 'user_profile');
 
   @override
-  int getCount(data) => data.length;
+  int getTotalCount(data) => data.length;
+
+  @override
+  Future<void> start() async {
+    await super.start();
+    _sub = stream.listen((snapshot) => triggerSync(snapshot));
+  }
+
+  @override
+  Future<void> stop() async {
+    await _sub?.cancel();
+    _sub = null;
+    await super.stop();
+  }
 
   @override
   Future<void> performSync(data, onSyncOper) async {
@@ -74,7 +103,7 @@ final syncTree = SyncComposite(
 
 ### 3\. Listen to Events
 
-The `events` stream provides the **Status** and the **Origin** node.
+The `events` stream provides the **Status** and the **Origin** node. You can easily convert these events into a UI-friendly `SyncState`.
 
 ```dart
 syncTree.events.listen((event) {
@@ -87,6 +116,22 @@ syncTree.events.listen((event) {
 });
 
 await syncTree.start();
+```
+
+### 🎯 Pro Tip: State Handling with Pattern Matching
+
+Throttled Sync Tree provides a **Sealed Class** hierarchy for its states, making it a perfect match for Flutter's pattern matching.
+
+```dart
+// Use this in your Bloc, Riverpod, or ViewModel
+final message = switch (state) {
+  SyncInitial() => 'Ready to begin',
+  SyncInProgress(origin: var o) => 'Syncing ${o.key}... ${(o.progress * 100).toStringAsFixed(1)}%',
+  SyncFailure(message: var m) => 'Error occurred: $m',
+  SyncSuccess() => 'All systems synced! 🚀',
+  SyncPaused() => 'Sync is paused',
+  _ => 'Processing...'
+};
 ```
 
 -----
@@ -114,7 +159,12 @@ Control resilience.
 
 In a typical average-based system, a task with 1 item and a task with 1,000 items both represent 50% of the progress. In **Throttled Sync Tree**, the 1,000-item task correctly takes up **99.9%** of the progress bar weight.
 
-> **Formula:** \> $$Total Progress = \frac{\sum (Node Progress \times Total Count)}{\sum Total Count}$$
+**Progress Formula:**
+```text
+                  Σ (Child Progress × Child Total Count)
+Total Progress = ────────────────────────────────────────
+                        Σ (All Child Total Counts)
+```
 
 -----
 
