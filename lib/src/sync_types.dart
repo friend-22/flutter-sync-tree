@@ -1,145 +1,184 @@
+import 'dart:math';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
-/// Defines the various states of a synchronization process.
+/// Defines the lifecycle states of a synchronization process.
 enum SyncStatus {
-  /// Initial state before any operation has been initialized.
+  /// The initial state before the node is initialized.
   none,
 
-  /// The node is initialized and ready but currently inactive.
+  /// The node is initialized and ready, but no operation is currently active.
+  /// Often used when a node is reset for a new session.
   idle,
 
-  /// Triggered when the synchronization process begins.
+  /// Indicates that the synchronization process has been initiated.
   start,
 
-  /// Triggered during active data processing to provide progress updates.
+  /// Indicates that data processing is active and progress updates are being emitted.
   progress,
 
-  /// Triggered when an unrecoverable error occurs during synchronization.
+  /// Indicates that the synchronization failed due to an unrecoverable error.
   error,
 
-  /// Triggered when the task or the entire tree completes successfully.
+  /// Indicates that the node (or the entire tree) has successfully finished its task.
   complete,
 
-  /// Triggered when the synchronization is manually paused by the user.
+  /// Indicates that the process has been temporarily paused by the user or system.
   pause,
 
-  /// Triggered when the synchronization is explicitly stopped.
+  /// Indicates that the process was explicitly terminated before completion.
   stop
 }
 
-/// Configuration for retry logic with exponential backoff.
+/// Configuration for retry logic using an exponential backoff strategy.
 ///
-/// This determines how a [SyncLeaf] handles transient failures by retrying
-/// the operation with increasing delays.
+/// This determines how a [SyncLeaf] handles transient failures by re-attempting
+/// operations with incrementally increasing delays to avoid server congestion.
 class RetryConfig extends Equatable {
-  /// Maximum number of retry attempts before the process fails with an error.
+  /// The maximum number of retry attempts allowed before reporting a final [SyncStatus.error].
+  ///
+  /// Once this limit is reached, the error will be rethrown.
   final int maxTryCount;
 
-  /// Base delay in milliseconds for exponential backoff.
+  /// The initial delay in milliseconds for the first retry attempt.
   ///
-  /// The actual delay typically follows: (lazyDelayMs * 2^tries).
-  final int lazyDelayMs;
+  /// This serves as the foundation for subsequent backoff calculations.
+  final int baseDelayMs;
 
-  /// Maximum time allowed for a single synchronization attempt before it times out.
+  /// The factor by which the delay increases with each subsequent retry.
+  ///
+  /// The delay for the current attempt is calculated as:
+  /// `baseDelayMs * (multiplier ^ (retryCount - 1))`
+  final double multiplier;
+
+  /// The maximum duration allowed for a single synchronization attempt.
+  ///
+  /// If an attempt exceeds this duration, a [TimeoutException] is thrown.
   final Duration timeout;
 
-  /// Optional callback triggered on every retry attempt with the current retry count.
-  final void Function(int tries)? onRetry;
+  /// An optional callback invoked on each retry attempt.
+  ///
+  /// Provides the current retry count (starting from 1) to the listener.
+  final void Function(int retryCount)? onRetry;
 
+  /// Creates a [RetryConfig] with predefined or custom settings.
+  ///
+  /// Default values are tuned for typical mobile network environments:
+  /// - [maxTryCount]: 3 attempts
+  /// - [baseDelayMs]: 1,000ms (1 second)
+  /// - [multiplier]: 2.0 (doubles the delay each time)
   const RetryConfig({
-    this.maxTryCount = 5,
-    this.lazyDelayMs = 50,
+    this.maxTryCount = 3,
+    this.baseDelayMs = 1000,
+    this.multiplier = 2.0,
     this.timeout = const Duration(seconds: 30),
     this.onRetry,
   });
 
-  /// Returns a copy of this configuration with the given fields replaced.
+  /// Calculates the delay for a specific retry attempt.
+  ///
+  /// Returns [Duration.zero] if [retryCount] is 0.
+  /// For [retryCount] > 0, calculates exponential delay based on [multiplier].
+  Duration getDelay(int retryCount) {
+    if (retryCount <= 0) return Duration.zero;
+    final int delay = baseDelayMs * pow(multiplier, retryCount - 1).toInt();
+    return Duration(milliseconds: delay);
+  }
+
   RetryConfig copyWith({
     int? maxTryCount,
-    int? lazyDelayMs,
+    int? baseDelayMs,
+    double? multiplier,
     Duration? timeout,
-    void Function(int tries)? onRetry,
+    void Function(int retryCount)? onRetry,
   }) {
     return RetryConfig(
       maxTryCount: maxTryCount ?? this.maxTryCount,
-      lazyDelayMs: lazyDelayMs ?? this.lazyDelayMs,
+      baseDelayMs: baseDelayMs ?? this.baseDelayMs,
+      multiplier: multiplier ?? this.multiplier,
       timeout: timeout ?? this.timeout,
       onRetry: onRetry ?? this.onRetry,
     );
   }
 
   @override
-  List<Object?> get props => [maxTryCount, lazyDelayMs, timeout];
+  List<Object?> get props => [maxTryCount, baseDelayMs, multiplier, timeout];
 }
 
-/// Configuration for throttling progress updates to optimize UI rendering performance.
+/// Configuration to throttle progress updates, optimizing UI rendering performance.
 ///
-/// Throttling prevents the UI from being overwhelmed by too many state changes
-/// in a short period, especially during high-frequency data processing.
+/// Throttling prevents the UI thread from being overwhelmed by high-frequency
+/// state changes during rapid data processing.
 class ThrottlerConfig extends Equatable {
-  /// Minimum progress change (0.0 to 1.0) required to emit a new update.
+  /// The minimum progress increment (0.0 to 1.0) required to trigger a UI update.
   final double threshold;
 
-  /// Precision for floating-point comparisons to handle progress calculations.
+  /// The floating-point precision used for comparing progress values.
   final double precision;
 
-  /// Minimum time interval that must pass between consecutive updates.
-  final Duration duration;
+  /// The minimum time interval required between consecutive progress updates.
+  final Duration interval;
 
   const ThrottlerConfig({
     this.threshold = 0.01,
     this.precision = 1e-4,
-    this.duration = const Duration(milliseconds: 100),
+    this.interval = const Duration(milliseconds: 100),
   });
 
-  /// Returns a copy of this configuration with the given fields replaced.
+  /// Creates a copy of this configuration with updated fields.
   ThrottlerConfig copyWith({
     double? threshold,
     double? precision,
-    Duration? duration,
+    Duration? interval,
   }) {
     return ThrottlerConfig(
       threshold: threshold ?? this.threshold,
       precision: precision ?? this.precision,
-      duration: duration ?? this.duration,
+      interval: interval ?? this.interval,
     );
   }
 
   @override
-  List<Object?> get props => [threshold, precision, duration];
+  List<Object?> get props => [threshold, precision, interval];
 }
 
-/// Callback signature for reporting individual sync operations (e.g., 'add', 'update').
+/// Callback for reporting discrete synchronization operations (e.g., 'add', 'update').
 ///
-/// [oper] is the type of operation performed, and [count] is the number of items affected.
-typedef OnSyncOper = Future<void> Function(String oper, {int count});
+/// [operation] describes the action performed, and [count] is the number of affected items.
+typedef OnSyncOperation = Future<void> Function(String operation, {int count});
 
-/// Callback signature for listening to synchronization lifecycle events.
+/// Callback for observing synchronization lifecycle events.
 ///
-/// [type] is the category of the event, and [child] is the node that triggered it.
-typedef OnSyncNotify = void Function(SyncStatus type, SyncNode child);
+/// [status] represents the current state, and [origin] is the node that dispatched the event.
+typedef OnSyncNotify = void Function(SyncStatus status, SyncNode origin);
 
-/// Utility for logging synchronization events with tree and leaf differentiation.
+/// Utility for logging synchronization events with distinct icons for tree levels.
 ///
-/// Provides global toggles to enable or disable logs for different node levels.
-class SyncPrint {
-  /// Globally enables or disables logs from [SyncComposite] nodes.
+/// Provides global toggles to filter logs based on the node type ([SyncComposite] or [SyncLeaf]).
+class SyncLog {
+  /// Whether to enable logs from [SyncComposite] (Tree) nodes.
   static bool enableComposite = true;
 
-  /// Globally enables or disables logs from [SyncLeaf] nodes.
+  /// Whether to enable logs from [SyncLeaf] (Leaf) nodes.
   static bool enableLeaf = true;
 
-  /// Logs a message formatted for a [SyncComposite] node.
-  static void fromComposite(String key, String message) {
-    if (!SyncPrint.enableComposite) return;
-    debugPrint('?? [Composite:$key] $message');
+  /// Logs a message from a root or high-level tree structure.
+  static void fromTree(String key, String message) {
+    if (!enableComposite) return;
+    debugPrint('🌲 [Tree:$key] $message');
   }
 
-  /// Logs a message formatted for a [SyncLeaf] node.
+  /// Logs a message from a [SyncComposite] node.
+  static void fromComposite(String key, String message) {
+    if (!enableComposite) return;
+    debugPrint('🌳 [Composite:$key] $message');
+  }
+
+  /// Logs a message from a [SyncLeaf] node.
   static void fromLeaf(String key, String message) {
-    if (!SyncPrint.enableLeaf) return;
-    debugPrint('?? [Leaf:$key] $message');
+    if (!enableLeaf) return;
+    debugPrint('🍃 [Leaf:$key] $message');
   }
 }

@@ -1,67 +1,67 @@
 import 'package:equatable/equatable.dart';
 
-/// Interface for accessing counters related to synchronization operations.
+/// An interface for accessing statistical counters related to synchronization operations.
 ///
-/// This mixin provides convenient getters for standard operation types defined in
-/// [SyncSummary], while allowing extensible access to custom operation keys.
+/// This mixin provides convenient accessors for standard metrics defined in [SyncSummary],
+/// while allowing flexible retrieval of custom, domain-specific operation keys.
 mixin SummaryGetter {
-  /// Returns the count of a specific operation identified by its [key].
+  /// Returns the current count of a specific operation identified by [key].
   int getCount(String key);
 
-  /// The total number of items processed or planned for synchronization.
+  /// The total number of items targeted or identified for synchronization.
   int get totalCount => getCount(SyncSummary.total);
 
-  /// The number of items successfully added to the destination.
+  /// The number of items successfully created at the destination.
   int get addCount => getCount(SyncSummary.add);
 
-  /// The number of items successfully updated in the destination.
+  /// The number of items successfully modified at the destination.
   int get updateCount => getCount(SyncSummary.update);
 
-  /// The number of items successfully removed from the destination.
+  /// The number of items successfully deleted from the destination.
   int get removeCount => getCount(SyncSummary.remove);
 
-  /// The number of items recovered during retries or after a failure.
+  /// The number of items successfully recovered during retries or reconciliation.
   int get recoverCount => getCount(SyncSummary.recover);
 
-  /// The number of items that were already up-to-date and skipped.
+  /// The number of items that were already in the latest state and thus skipped.
   int get latestCount => getCount(SyncSummary.latest);
 
-  /// Returns `true` if any synchronization operation has performed a change.
+  /// Returns `true` if any synchronization operations have been recorded.
   bool get hasChanges => totalCount > 0;
 
-  /// Returns `true` if all processed items were already in their latest state.
+  /// Returns `true` if every processed item was already up-to-date.
   bool get allLatest => totalCount > 0 && totalCount == latestCount;
 }
 
-/// An immutable value object representing the statistical result of a sync task.
+/// An immutable value object representing the statistical breakdown of a synchronization task.
 ///
-/// It functions as a cumulative counter map that tracks both standard
-/// operations (add, update, remove) and custom domain-specific metrics.
+/// Acts as a cumulative counter that tracks both standard lifecycle operations
+/// (add, update, remove) and custom metrics across the synchronization tree.
 class SyncSummary extends Equatable with SummaryGetter {
-  /// Key for the total number of synchronization targets.
+  /// Key representing the total workload.
   static const String total = 'total';
 
-  /// Key for successful 'add' operations.
+  /// Key representing creation operations.
   static const String add = 'add';
 
-  /// Key for successful 'update' operations.
+  /// Key representing modification operations.
   static const String update = 'update';
 
-  /// Key for successful 'remove' operations.
+  /// Key representing deletion operations.
   static const String remove = 'remove';
 
-  /// Key for items recovered during the process.
+  /// Key representing items recovered after initial failure.
   static const String recover = 'recover';
 
-  /// Key for items that were already latest and skipped.
+  /// Key representing items that required no action.
   static const String latest = 'latest';
 
   final Map<String, int> _map;
 
-  /// Creates a new [SyncSummary] instance.
+  /// Creates a [SyncSummary] instance.
   ///
-  /// The internal map is kept immutable to ensure consistent state tracking
-  /// across the synchronization tree.
+  /// The internal map is immutable, ensuring consistent state as results
+  /// propagate from leaf nodes up to the composite root.
   const SyncSummary([this._map = const {}]);
 
   @override
@@ -69,18 +69,18 @@ class SyncSummary extends Equatable with SummaryGetter {
 
   /// Returns a new [SyncSummary] with the counter for [key] incremented by 1.
   ///
-  /// This operator allows the sync engine to update progress in a
-  /// thread-safe and immutable manner.
+  /// This operator facilitates a functional, thread-safe approach to
+  /// updating synchronization progress within the engine.
   SyncSummary operator +(String key) {
     final newMap = Map<String, int>.from(_map);
     newMap[key] = (newMap[key] ?? 0) + 1;
     return SyncSummary(newMap);
   }
 
-  /// Merges this summary with [other] by summing up values for all keys.
+  /// Merges this summary with [other] by aggregating values for all keys.
   ///
-  /// This is primarily used by [SyncComposite] nodes to aggregate
-  /// results from multiple child nodes into a single summary.
+  /// Primarily utilized by composite nodes to consolidate results from
+  /// multiple child nodes into a unified statistical report.
   SyncSummary merge(SyncSummary other) {
     if (other._map.isEmpty) return this;
     if (_map.isEmpty) return other;
@@ -93,8 +93,35 @@ class SyncSummary extends Equatable with SummaryGetter {
   }
 
   @override
-  String toString() => 'SyncSummary($_map)';
+  String toString() {
+    if (_map.isEmpty) return 'SyncSummary(empty)';
+
+    const priorityKeys = [
+      SyncSummary.total,
+      SyncSummary.add,
+      SyncSummary.update,
+      SyncSummary.remove,
+      SyncSummary.recover,
+      SyncSummary.latest,
+    ];
+
+    final sortedKeys = _map.keys.toList()
+      ..sort((a, b) {
+        final indexA = priorityKeys.indexOf(a);
+        final indexB = priorityKeys.indexOf(b);
+
+        if (indexA != -1 && indexB != -1) return indexA.compareTo(indexB);
+        if (indexA != -1) return -1;
+        if (indexB != -1) return 1;
+        return a.compareTo(b);
+      });
+
+    final buffer =
+        sortedKeys.where((key) => (_map[key] ?? 0) > 0).map((key) => '$key: ${_map[key]}').join(', ');
+
+    return 'SyncSummary($buffer)';
+  }
 
   @override
-  List<Object?> get props => [_map]; // Equatable handles Map equality by default
+  List<Object?> get props => [_map];
 }

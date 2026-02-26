@@ -1,32 +1,34 @@
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
-/// A node that bundles multiple [SyncNode]s (Leafs or other Composites).
+/// A container node that orchestrates multiple [SyncNode]s (Leafs or other Composites).
 ///
 /// It coordinates execution order between [primarySyncs] and [lateSyncs],
-/// and aggregates the progress and status of all its children into a single view.
+/// aggregating the progress and status of all child nodes into a unified view.
 ///
-/// [SyncComposite] uses a [Throttler] to prevent UI performance degradation
-/// by limiting the frequency of progress updates emitted during heavy child activity.
+/// [SyncComposite] utilizes an internal [Throttler] to regulate the frequency
+/// of progress updates emitted during intense child node activity.
 class SyncComposite extends SyncNode {
   /// Core tasks that are executed first and in parallel.
   final List<SyncNode> primarySyncs;
 
-  /// Secondary tasks that start only after primary tasks have progressed or completed.
+  /// Secondary tasks that are initiated after primary tasks have started or completed.
   final List<SyncNode> lateSyncs;
 
-  /// Combined list of all child nodes for unified management.
+  /// Flattened list of all child nodes for simplified internal management.
   final List<SyncNode> _children = [];
 
-  /// Stores a snapshot of summaries from completed nodes to ensure data consistency.
+  /// A registry of summary snapshots from completed nodes to maintain data consistency.
   final Map<String, SyncSummary> _completedSnapshots = {};
 
-  /// If true, the composite stops immediately if any child node encounters an error.
+  /// If true, the composite terminates all operations if any child encounters an error.
   final bool stopOnError;
 
-  /// Configuration for the internal [Throttler] to manage update frequency.
+  /// Configuration for the internal throttler to manage UI update frequency.
   final ThrottlerConfig throttlerConfig;
 
   late Throttler _throttler;
+
+  bool _isFirstStartSignal = true;
 
   SyncComposite({
     super.key,
@@ -35,30 +37,35 @@ class SyncComposite extends SyncNode {
     List<SyncNode>? lateSyncs,
     this.stopOnError = false,
   }) : lateSyncs = lateSyncs ?? [] {
-    // Initialize the throttler to notify listeners only when threshold
-    // or duration constraints are met.
+    // Initialize the throttler to ensure progress updates adhere to
+    // threshold and interval constraints.
     _throttler = Throttler(
       threshold: throttlerConfig.threshold,
-      duration: throttlerConfig.duration,
+      interval: throttlerConfig.interval,
       precision: throttlerConfig.precision,
-      onUpdate: (p, extra) {
+      onUpdate: (progressValue, _) {
         notify(SyncStatus.progress, origin: this);
-        SyncPrint.fromComposite('$key', 'Progress: ${(progress * 100).toStringAsFixed(1)}%');
+        SyncLog.fromComposite('$key', 'Total Progress: ${(progress * 100).toStringAsFixed(1)}%');
       },
     );
 
     _children.addAll([...primarySyncs, ...this.lateSyncs]);
 
-    // Aggregate events from all children to represent the composite's overall state.
+    // Subscribes to events from all children to derive the composite's overall state.
     for (final child in _children) {
-      child.listen((type, origin) async {
-        switch (type) {
+      child.listen((status, origin) async {
+        switch (status) {
           case SyncStatus.start:
-            notify(SyncStatus.start);
-            SyncPrint.fromComposite('$key', 'Started: ${origin.key}');
-            if (origin.key != null) {
+            if (_isFirstStartSignal) {
+              _completedSnapshots.clear();
+              _resetAllNodes();
+              _isFirstStartSignal = false;
+            } else {
               _completedSnapshots.remove(origin.key!);
             }
+
+            notify(SyncStatus.start, origin: origin);
+            SyncLog.fromComposite('$key', 'Node started: ${origin.key}');
             break;
 
           case SyncStatus.progress:
@@ -67,44 +74,69 @@ class SyncComposite extends SyncNode {
 
           case SyncStatus.complete:
             if (origin.key != null) {
-              // Store summary snapshot upon completion.
               _completedSnapshots[origin.key!] = const SyncSummary().merge(origin.summary);
             }
 
             _throttler.update(progress);
 
+            // Check if all active children have reached a terminal state.
             if (isCompleted) {
-              notify(SyncStatus.complete, origin: this);
-              SyncPrint.fromComposite('$key', 'Complete: $summary');
+              if (_children.any((h) => h.isError)) {
+                notify(SyncStatus.error, origin: this);
+                SyncLog.fromComposite('$key', 'Session concluded with errors.');
+              } else {
+                notify(SyncStatus.complete, origin: this);
+                SyncLog.fromComposite('$key', 'Session completed successfully: $summary');
+              }
               _throttler.reset();
+              _isFirstStartSignal = true;
             }
             break;
 
           case SyncStatus.error:
+            if (origin.key != null) {
+              _completedSnapshots[origin.key!] = const SyncSummary().merge(origin.summary);
+            }
+
             notify(SyncStatus.error, origin: origin);
-            SyncPrint.fromComposite('$key', 'Error detected in ${origin.key}: $message');
+
+            SyncLog.fromComposite('$key', 'Error reported by ${origin.key}: $message');
             if (stopOnError) await stop();
             break;
 
           case SyncStatus.stop:
             if (_children.every((node) => node.isStopped)) {
+              _isFirstStartSignal = true;
+              _completedSnapshots.clear();
+
               notify(SyncStatus.stop, origin: this);
-              SyncPrint.fromComposite('$key', 'All children stopped.');
+              SyncLog.fromComposite('$key', 'Synchronization process stopped.');
             }
             break;
 
           case SyncStatus.pause:
             if (_children.every((node) => node.isPaused)) {
               notify(SyncStatus.pause, origin: this);
-              SyncPrint.fromComposite('$key', 'Paused');
+              SyncLog.fromComposite('$key', 'Synchronization process paused.');
             }
             break;
 
           default:
-            notify(type, origin: origin);
+            notify(status, origin: origin);
             break;
         }
       });
+    }
+  }
+
+  /// Recursively resets child nodes to clear previous session data or error states.
+  void _resetAllNodes() {
+    for (var child in _children) {
+      if (child is SyncComposite) {
+        child._resetAllNodes();
+      } else if (child is SyncLeaf && child.isError) {
+        child.reset();
+      }
     }
   }
 
@@ -115,7 +147,29 @@ class SyncComposite extends SyncNode {
   bool get isSyncing => _children.any((h) => h.isSyncing);
 
   @override
-  bool get isCompleted => _children.every((h) => h.isCompleted);
+  bool get isCompleted {
+    if (_children.isEmpty) return false;
+
+    return _children.every((h) {
+      if (h.isSyncing && !h.isIdle) return false;
+
+      // Consider a node finished if it had work and is now in a terminal state (Complete/Error).
+      if (h.totalCount > 0 || h.completedCount > 0) {
+        return h.isCompleted || h.isError;
+      }
+
+      return true;
+    });
+  }
+
+  @override
+  bool get isError => _children.any((h) => h.isError);
+
+  @override
+  bool get isPaused => _children.every((h) => h.isPaused);
+
+  @override
+  bool get isStopped => _children.every((h) => h.isStopped);
 
   @override
   bool get hasMessage => _children.any((h) => h.hasMessage);
@@ -126,40 +180,51 @@ class SyncComposite extends SyncNode {
   @override
   int get completedCount => _children.fold(0, (sum, node) => sum + node.completedCount);
 
-  /// Calculates weighted progress based on the cumulative 'totalCount' of all children.
+  /// Calculates the aggregate progress based on the total workload of all active children.
   @override
   double get progress {
     if (totalCount == 0) return 0.0;
     if (isCompleted) return 1.0;
 
     final result = completedCount / totalCount;
-    // Cap at 1.0 to avoid floating point overflow display.
+    // Normalize and cap the value to prevent UI overflow from floating point precision issues.
     return result > 0.999 ? 1.0 : result;
   }
 
   @override
-  String? get message => _children.map((node) => node.message).whereType<String>().lastOrNull;
+  String? get message {
+    final messages =
+        _children.map((node) => node.message).whereType<String>().where((msg) => msg.isNotEmpty).toSet();
 
-  /// Aggregates summaries from all child nodes, combining snapshots and active nodes.
+    if (messages.isEmpty) return null;
+
+    return messages.join('\n');
+  }
+
+  /// Aggregates summaries from all child nodes, combining snapshots and active metrics.
   @override
   SyncSummary get summary {
     SyncSummary total = const SyncSummary();
 
-    // 1. Add snapshots from completed nodes.
-    for (var snapshot in _completedSnapshots.values) {
-      total = total.merge(snapshot);
-    }
-
-    // 2. Add current summaries from active (syncing) nodes.
     for (var child in _children) {
-      if (child.isSyncing && !_completedSnapshots.containsKey(child.key)) {
+      final key = child.key;
+
+      if (key != null && _completedSnapshots.containsKey(key)) {
+        total = total.merge(_completedSnapshots[key]!);
+      } else if (child.isSyncing) {
         total = total.merge(child.summary);
       }
     }
+
     return total;
   }
 
-  /// Recursively searches for a node with the specified [targetKey].
+  List<SyncNode> get allChildren => _children;
+
+  @Deprecated('Use findNode instead. This will be removed in 1.1.0')
+  SyncNode? getNode(String key) => findNode(key);
+
+  /// Recursively searches for a specific [SyncNode] by its key.
   SyncNode? findNode(String targetKey) {
     for (final node in _children) {
       if (node.key == targetKey) return node;
@@ -171,19 +236,20 @@ class SyncComposite extends SyncNode {
     return null;
   }
 
-  /// Convenience helper to get the [SyncSummary] of a specific child node.
+  /// Convenience method to retrieve the [SyncSummary] for a specific child node.
   SyncSummary getSummary(String targetKey) => findNode(targetKey)?.summary ?? const SyncSummary();
 
   @override
   Future<void> start() async {
     _throttler.reset();
+    _isFirstStartSignal = true;
     _completedSnapshots.clear();
 
-    // Start primary tasks in parallel.
+    // Initiate primary tasks in parallel.
     await Future.wait(primarySyncs.map((h) => h.start()));
 
-    // Start late tasks in parallel.
-    // Note: Late tasks usually wait for primary data inside their own performSync.
+    // Initiate late tasks in parallel.
+    // Secondary tasks typically synchronize internally with primary task progress.
     if (lateSyncs.isNotEmpty) {
       await Future.wait(lateSyncs.map((h) => h.start()));
     }

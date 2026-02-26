@@ -1,16 +1,27 @@
 ## 1.0.3
-* **🚀 Performance & UI Optimization**
-    * Added `Throttler` to `SyncComposite` to aggregate high-frequency progress events from multiple child nodes.
-    * Prevents UI jank by ensuring the root progress only updates at meaningful intervals (configured via `ThrottlerConfig`).
+### 🔄 Breaking Changes
+- **Naming Consistency Updates:**
+  - **SyncLeaf**: Renamed `getCount(T data)` to `getTotalCount(T data)`.
+  - **SyncComposite**: Renamed `isComplete` to `isCompleted` and `getNode()` to `findNode()`.
+  - **Throttler/ThrottlerConfig**: Renamed `duration` to `interval` to better represent the time gap between updates.
+  - **RetryConfig**: Renamed `lazyDelayMs` to `baseDelayMs` to clarify it as the starting point for backoff calculations.
+  - **Logging**: Renamed `SyncPrint` to `SyncLog` for a more standard naming convention.
+- **SyncState**: Renamed `getNode(String key)` to `findNode(String key)` to maintain API uniformity.
 
-* **📊 Documentation & Clarity**
-    * Fixed: Replaced LaTeX math formulas in README with high-compatibility ASCII diagrams for better rendering on pub.dev and GitHub.
-    * Improved: Enhanced package metadata and description for better discoverability.
-    * Added: Detailed "Sample in Action" section to explain hierarchical sync logic.
+### 🚀 Performance & UI Optimization
+- **Integrated Throttler in SyncComposite**: Aggregates high-frequency progress events from multiple child nodes to optimize main thread performance.
+- **Jank Prevention**: Ensures the root progress only dispatches updates at meaningful intervals, highly configurable via `ThrottlerConfig`.
+
+### 📊 Documentation & Reliability
+- **Improved README Rendering**: Replaced LaTeX formulas with high-compatibility ASCII/Markdown diagrams for consistent rendering across `pub.dev` and GitHub.
+- **Enhanced Discoverability**: Refined package metadata and descriptions to improve SEO and user guidance.
+- **Added "In-Depth Examples"**: New section in documentation providing a step-by-step guide for hierarchical synchronization logic.
 
 * **🐞 Bug Fixes & Refactoring**
-    * Fixed: Corrected method naming in example code (`getTotalCount`) for consistency with the base class.
-    * Improved: Enhanced lifecycle management in `SyncLeaf` to ensure safe stream subscription handling.
+  - **Notification Throttling**: Eliminated redundant state notifications to prevent log flooding and unnecessary UI rebuilds.
+  - **Flow Control**: Introduced `canNextGen` logic in `SyncSimulator` to prevent data collisions by ensuring active streams finish before the next generation.
+  - **Lifecycle Safety**: Enhanced stream subscription handling in `SyncLeaf` for more robust resource management during `dispose`.
+  - **API Fixes**: Corrected method naming in example snippets to match the updated 1.0.3 API.
 
 ## 1.0.2
 

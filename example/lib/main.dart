@@ -1,12 +1,14 @@
 import 'dart:async';
 
-import 'package:example/sync_node_tile.dart';
-import 'package:example/sync_simulator.dart';
+import 'package:example/widgets/sync_global_controller.dart';
+import 'package:example/widgets/sync_node_tile.dart';
+import 'package:example/simulator/sync_simulator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
-import 'fake_firebase.dart';
-import 'fake_http_download.dart';
+import 'widgets/data_injector_panel.dart';
+import 'mocks/fake_firebase.dart';
+import 'mocks/fake_http_download.dart';
 
 void main() => runApp(const MyApp());
 
@@ -15,25 +17,32 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(home: const SyncExampleScreen());
+    return MaterialApp(
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
+      home: const SyncTreeDashboard(),
+    );
   }
 }
 
-class SyncExampleScreen extends StatefulWidget {
-  const SyncExampleScreen({super.key});
+class SyncTreeDashboard extends StatefulWidget {
+  const SyncTreeDashboard({super.key});
 
   @override
-  State<SyncExampleScreen> createState() => _SyncExampleScreenState();
+  State<SyncTreeDashboard> createState() => _SyncTreeDashboardState();
 }
 
-class _SyncExampleScreenState extends State<SyncExampleScreen> {
+class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
+  // Sync Entities: Composites represent groups, Leaves represent individual tasks.
   late SyncComposite _rootSync, _firebaseGroup, _syncGroup;
-  late SyncLeaf _userSync, _photoSync, _httpSync;
+  late SyncLeaf _userLeaf, _photoLeaf, _mediaLeaf;
+  late FakeFirebaseLeaf _primaryLeaf;
+  late LateFakeFirebaseLeaf _lateLeaf;
+
+  // Simulators: Used to mimic real-world data stream bursts.
   late SyncSimulator _userSim, _photoSim, _httpSim;
   late SyncSimulator _twoWaySim;
-  late FakeFirebaseLeaf _primarySync;
-  late LateFakeFirebaseLeaf _lateSync;
 
+  // StreamControllers: Act as the data source for each SyncLeaf.
   final usersController = StreamController<FakeQuerySnapshot>.broadcast();
   final photosController = StreamController<FakeQuerySnapshot>.broadcast();
   final httpsController = StreamController<FakeDownloadPackage>.broadcast();
@@ -50,108 +59,57 @@ class _SyncExampleScreenState extends State<SyncExampleScreen> {
     _bindDependencyReset();
   }
 
+  /// Initializes mock data generators for demonstration purposes.
   void _initSimulators() {
-    _userSim = FakeQuerySnapshotSimulator(controller: usersController, maxCount: 10, minCount: 5);
-    _photoSim = FakeQuerySnapshotSimulator(controller: photosController, maxCount: 20, minCount: 10);
+    _userSim = FakeQuerySnapshotSimulator(controller: usersController, maxCount: 40, minCount: 20);
+    _photoSim = FakeQuerySnapshotSimulator(controller: photosController, maxCount: 50, minCount: 30);
     _httpSim = FakeHttpSimulator(controller: httpsController);
     _twoWaySim = TwoWaySyncSimulator(
       controller: primaryController,
       lateController: lateController,
-      maxCount: 10,
-      minCount: 5,
+      maxCount: 30,
+      minCount: 20,
+      intervalMs: 7000,
     );
   }
 
+  /// The heart of the architecture: Defining the hierarchical synchronization tree.
   void _setupSyncTree() {
-    // 1. Firebase Group
-    _userSync = FakeFirebaseLeaf(key: 'User Profile', stream: usersController.stream);
-    _photoSync = FakeFirebaseLeaf(key: 'Gallery Photos', stream: photosController.stream);
-    _firebaseGroup = SyncComposite(key: 'Firebase Data', primarySyncs: [_userSync, _photoSync]);
+    // Group 1: Firebase Data Sync (Parallel execution by default within Composite)
+    _userLeaf = FakeFirebaseLeaf(key: 'User Profile', stream: usersController.stream);
+    _photoLeaf = FakeFirebaseLeaf(key: 'Gallery Photos', stream: photosController.stream);
+    _firebaseGroup = SyncComposite(key: 'Firebase Data', primarySyncs: [_userLeaf, _photoLeaf]);
 
-    // 2. Sync Group (Primary & Late)
-    _primarySync = FakeFirebaseLeaf(key: 'Primary Sync', stream: primaryController.stream);
-    _lateSync = LateFakeFirebaseLeaf(
+    // Group 2: Sequential Sync (LateSync waits for PrimarySync to complete)
+    _primaryLeaf = FakeFirebaseLeaf(key: 'Primary Sync', stream: primaryController.stream);
+    _lateLeaf = LateFakeFirebaseLeaf(
       key: 'Late Sync',
       stream: lateController.stream,
-      primary: _primarySync,
-      retryConfig: RetryConfig(lazyDelayMs: 100, onRetry: (tries) => _lateSync.onRetry(tries)),
+      primary: _primaryLeaf,
+      retryConfig: RetryConfig(onRetry: (tries) => _lateLeaf.onRetry(tries)),
     );
-    _syncGroup = SyncComposite(key: 'Sync Group', primarySyncs: [_primarySync, _lateSync]);
+    _syncGroup = SyncComposite(key: 'Sync Group', primarySyncs: [_primaryLeaf, _lateLeaf]);
 
-    // 3. Root
-    _httpSync = FakeHttpDownloadLeaf(key: 'Resource Pack', stream: httpsController.stream);
-    _rootSync = SyncComposite(
-      key: 'App Root Sync',
-      primarySyncs: [_firebaseGroup, _httpSync, _syncGroup],
-      throttlerConfig: const ThrottlerConfig(duration: Duration(milliseconds: 100)),
-    );
+    // Group 3: App Root - Aggregating all groups into a single source of truth.
+    _mediaLeaf = FakeHttpDownloadLeaf(key: 'Resource Pack', stream: httpsController.stream);
+    _rootSync = SyncComposite(key: 'App Root Sync', primarySyncs: [_firebaseGroup, _syncGroup, _mediaLeaf]);
 
+    // Rebuild the UI whenever any node in the tree updates.
     _rootSync.events.listen((_) {
       if (mounted) setState(() {});
     });
   }
 
+  /// Custom logic to reset state when primary data changes.
   void _bindDependencyReset() {
     _subPrimary = primaryController.stream.listen((_) {
-      _primarySync.resetDataStatus();
+      _primaryLeaf.resetDataStatus();
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(title: const Text('Expert Sync Tree'), elevation: 0),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          DataInjectorPanel(
-            rootSync: _rootSync,
-            userSim: _userSim,
-            photoSim: _photoSim,
-            httpSim: _httpSim,
-            twoWaySim: _twoWaySim,
-          ),
-          const SizedBox(height: 20),
-
-          _buildMainActions(),
-          const SizedBox(height: 30),
-
-          const Text('Sync Status', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          SyncNodeTile(parent: _rootSync, children: [_httpSync], icon: Icons.account_tree),
-          const Divider(height: 32),
-          SyncNodeTile(parent: _firebaseGroup, children: [_userSync, _photoSync], icon: Icons.person),
-          const Divider(height: 32),
-          SyncNodeTile(parent: _syncGroup, children: [_primarySync, _lateSync], icon: Icons.sync),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMainActions() {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _actionIcon(Icons.play_arrow, Colors.green, _rootSync.start),
-          _actionIcon(Icons.pause, Colors.orange, _rootSync.pause),
-          _actionIcon(Icons.play_circle_filled, Colors.blue, _rootSync.resume),
-          _actionIcon(Icons.stop, Colors.red, _rootSync.stop),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionIcon(IconData icon, Color color, VoidCallback onPressed) {
-    return IconButton(
-      icon: Icon(icon, color: color),
-      onPressed: onPressed,
-    );
-  }
-
-  @override
   Future<void> dispose() async {
+    // Clean up all simulators and stream controllers to prevent memory leaks.
     _twoWaySim.stop();
     _userSim.stop();
     _photoSim.stop();
@@ -163,9 +121,84 @@ class _SyncExampleScreenState extends State<SyncExampleScreen> {
     httpsController.close();
     await _rootSync.dispose();
 
+    // Disposing the root composite recursively disposes all child nodes.
+    await _rootSync.dispose();
+
     await _subPrimary?.cancel();
     _subPrimary = null;
 
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final verticalGap = const SizedBox(height: 16);
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text(
+          'EXPERT SYNC ENGINE',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.2),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        children: [
+          _buildSectionTitle(Icons.tune_rounded, 'SIMULATION CONTROL'),
+          DataInjectorPanel(
+            rootSync: _rootSync,
+            userSim: _userSim,
+            photoSim: _photoSim,
+            httpSim: _httpSim,
+            twoWaySim: _twoWaySim,
+          ),
+          verticalGap,
+
+          _buildSectionTitle(Icons.analytics_outlined, 'GLOBAL PERFORMANCE'),
+          SyncGlobalController(rootNode: _rootSync),
+
+          const SizedBox(height: 32),
+          const Divider(thickness: 1, height: 1),
+
+          verticalGap,
+          _buildSectionTitle(Icons.account_tree_outlined, 'ROOT ORCHESTRATION'),
+          SyncNodeTile(parent: _rootSync, children: [_mediaLeaf], icon: Icons.account_tree),
+
+          verticalGap,
+          _buildSectionTitle(Icons.cloud_sync_outlined, 'FIREBASE CLUSTER'),
+          SyncNodeTile(parent: _firebaseGroup, children: [_userLeaf, _photoLeaf], icon: Icons.person),
+
+          verticalGap,
+          _buildSectionTitle(Icons.low_priority_rounded, 'DEPENDENCY PIPELINE'),
+          SyncNodeTile(parent: _syncGroup, children: [_primaryLeaf, _lateLeaf], icon: Icons.sync),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(IconData icon, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.blueGrey.shade700),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: Colors.blueGrey.shade800,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
