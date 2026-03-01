@@ -1,20 +1,34 @@
------
+<div align="center"> 
+# 🚀 Throttled Sync Tree 
 
-![패키지 데모](https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/Late sync.gif)
+**A robust, high-performance synchronization framework for Flutter and Dart.** 
 
-# 🚀 Throttled Sync Tree
+[![Live Demo](https://img.shields.io/badge/demo-live_preview-blueviolet?style=for-the-badge&logo=flutter)](https://friend-22.github.io/flutter-sync-tree/)
+<br/>
+[![Pub Version](https://img.shields.io/pub/v/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
+[![Pub Likes](https://img.shields.io/pub/likes/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
+[![Pub Points](https://img.shields.io/pub/points/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
 
-[](https://www.google.com/search?q=https://pub.dev/packages/throttled_sync_tree)
-[](https://opensource.org/licenses/MIT)
+--- 
 
-**A robust, high-performance synchronization framework for Flutter and Dart.**
-It manages complex, multi-layered data synchronization with **weighted progress calculation, 
-intelligent throttling**, and **resilient flow control**.
+It manages complex, multi-layered data synchronization with **weighted progress calculation**, <br/>**intelligent throttling**, and **resilient flow control**.
 
-Designed for applications handling large-scale real-time data (like Firebase Cloud Firestore) 
-or complex multi-stage initialization sequences where UI responsiveness is critical.
+<table align="center"> 
+	<tr> 
+		<td align="center" width="50%"><b>Sequential Phase (Late)</b></td> 
+		<td align="center" width="50%"><b>Parallel Phase (Primary)</b></td>
+	</tr> 
+	<tr> 
+		<td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/late_sync.gif" width="100%"></td>
+		<td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/parallel_sync.gif" width="100%"></td>
+	</tr>
+</table>
+</div>
 
------
+### ✨ Key Focus
+Designed for applications handling **large-scale real-time data** (like Firebase Cloud Firestore) or complex **multi-stage initialization sequences** where UI responsiveness is critical.
+
+---
 
 ## ✨ Key Features
 
