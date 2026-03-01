@@ -1,3 +1,8 @@
+## 1.0.4
+
+* Added Web Demo support with GitHub Pages.
+* Improved README with live preview and architectural diagrams.
+
 ## 1.0.3
 ### 🔄 Breaking Changes
 - **Naming Consistency Updates:**
