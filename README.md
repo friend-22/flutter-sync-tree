@@ -1,5 +1,7 @@
 -----
 
+![패키지 데모](https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/Late sync.gif)
+
 # 🚀 Throttled Sync Tree
 
 [](https://www.google.com/search?q=https://pub.dev/packages/throttled_sync_tree)
