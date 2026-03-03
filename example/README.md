@@ -63,11 +63,11 @@ Future<void> start() async {
 
 ## 📊 Summary of Simulated Nodes
 
-| Node Name | Type | Key Behavior |
-| :--- | :--- | :--- |
-| **User Profile** | `FirebaseLeaf` | Parallel sync, random document changes. |
-| **Resource Pack** | `HttpLeaf` | Chunk-based progress updates (Bytes). |
-| **Late Sync** | `LateLeaf` | **Wait & Retry** logic based on `Primary Sync`. |
-| **Two-Way** | `Simulator` | Simultaneous data injection to multiple leaves. |
+| Node Name | Type | Key Behavior                                                                             |
+| :--- | :--- |:-----------------------------------------------------------------------------------------|
+| **App Root Sync** | `RootNode` | **The Orchestrator.** Aggregates all child metrics into a single unified progress.       |
+| **Resource Pack** | `HttpLeaf` | **Chunk-based updates.** Simulates large file downloads with incremental byte reporting. |
+| **Late Sync** | `LateLeaf` | **Sequential Dependency.** Demonstrates "Wait & Retry" until Primary Sync finishes.      |
+| **Gallery Photos** | `FirebaseLeaf` | **High-density bursts.** Simulates rapid Firestore-like document additions/removals.     |
 
 -----

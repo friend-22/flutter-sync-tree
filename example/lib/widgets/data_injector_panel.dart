@@ -37,7 +37,7 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
     _setupSimulatorListeners();
 
     _refreshTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (mounted) setState(() {});
+      if (mounted && _isExpanded) setState(() {});
     });
   }
 
@@ -70,31 +70,27 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: Card(
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.blueGrey.shade50),
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: Container(
+        color: Colors.white,
         child: ExpansionTile(
-          initiallyExpanded: true,
-          shape: const Border(),
-          collapsedShape: const Border(),
           trailing: Icon(
             _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
             color: Colors.blueGrey,
           ),
           onExpansionChanged: (expanded) => setState(() => _isExpanded = expanded),
 
+          dense: true,
+          initiallyExpanded: true,
+          shape: const Border(),
+          collapsedShape: const Border(),
+
           title: _buildHeader(),
 
           children: [
-            const Divider(height: 1, indent: 16, endIndent: 16),
+            const Divider(height: 1, color: Colors.black12),
             AdaptiveScrollView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   _buildCompactTile("Users", widget.userSim, Colors.blue),
@@ -107,6 +103,8 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
                 ],
               ),
             ),
+
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
           ],
         ),
       ),
@@ -151,56 +149,58 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
   }
 
   Widget _buildCompactTile(String label, SyncSimulator sim, Color color) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _glowNotifiers[sim]!,
-      builder: (context, active, _) {
-        return RepaintBoundary(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            width: 140,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: sim.isWorking ? color.withValues(alpha: 0.03) : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: active
-                    ? Colors.amber.shade400
-                    : (sim.isWorking ? color.withValues(alpha: 0.2) : Colors.transparent),
-                width: active ? 2.0 : 1.0,
+    return RepaintBoundary(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _glowNotifiers[sim]!,
+        builder: (context, active, _) {
+          return RepaintBoundary(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: 140,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: sim.isWorking ? color.withValues(alpha: 0.03) : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: active
+                      ? Colors.amber.shade400
+                      : (sim.isWorking ? color.withValues(alpha: 0.2) : Colors.transparent),
+                  width: active ? 2.0 : 1.0,
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildStatusDot(active, sim.isWorking, color),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          color: sim.isWorking ? Colors.blueGrey.shade800 : Colors.blueGrey.shade300,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _buildStatusDot(active, sim.isWorking, color),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: sim.isWorking ? Colors.blueGrey.shade800 : Colors.blueGrey.shade300,
+                          ),
                         ),
                       ),
-                    ),
-                    if (sim.isWorking) _buildErrorTrigger(sim),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [_buildTimerText(sim, color), _buildCustomSwitch(sim, color)],
-                ),
-                const SizedBox(height: 8),
-                _buildProgressBar(active, sim, color),
-              ],
+                      if (sim.isWorking) _buildErrorTrigger(sim),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [_buildTimerText(sim, color), _buildCustomSwitch(sim, color)],
+                  ),
+                  const SizedBox(height: 8),
+                  _buildProgressBar(active, sim, color),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

@@ -14,7 +14,7 @@ class SyncChildRow extends StatelessWidget {
       stream: node.events,
       builder: (context, _) {
         final (isWaiting, retryCount, primaryKey) = switch (node) {
-          LateFakeFirebaseLeaf n => (n.isWaiting, n.retryCount, n.primary.key),
+          LateFakeFirebaseLeaf n when n.isSyncing => (n.isWaiting, n.retryCount, n.primary.key),
           _ => (false, 0, null),
         };
 

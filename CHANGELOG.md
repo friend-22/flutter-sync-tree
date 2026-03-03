@@ -1,3 +1,8 @@
+## 1.0.5
+
+* **Optimization**: Enhanced `Throttler.flush` with idempotency logic to prevent redundant event emissions.
+  * Added a precision-based check to skip updates if the value has already reached `maxValue`.
+  
 ## 1.0.4
 
 * Added Web Demo support with GitHub Pages.

@@ -126,51 +126,29 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: _buildAppBar(),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.white, Colors.grey.shade50],
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SyncGlobalController(rootNode: _rootSync),
           ),
-        ),
-        child: Scrollbar(
-          thumbVisibility: true,
-          thickness: 3,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-            children: [
-              SyncGlobalController(rootNode: _rootSync),
 
-              const SizedBox(height: 24),
-              _buildDividerWithLabel('NODE ARCHITECTURE'),
-              const SizedBox(height: 16),
-
-              _buildNodeList(),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: Container(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              children: [_buildNodeList()],
             ),
-          ],
-        ),
-        child: DataInjectorPanel(
-          rootSync: _rootSync,
-          userSim: _userSim,
-          photoSim: _photoSim,
-          httpSim: _httpSim,
-          twoWaySim: _twoWaySim,
-        ),
+          ),
+
+          const Divider(height: 1, color: Colors.black12),
+          DataInjectorPanel(
+            rootSync: _rootSync,
+            userSim: _userSim,
+            photoSim: _photoSim,
+            httpSim: _httpSim,
+            twoWaySim: _twoWaySim,
+          ),
+        ],
       ),
     );
   }
@@ -193,22 +171,6 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
       elevation: 0,
       surfaceTintColor: Colors.transparent,
       backgroundColor: Colors.white.withValues(alpha: 0.9),
-    );
-  }
-
-  Widget _buildDividerWithLabel(String label) {
-    return Row(
-      children: [
-        const Expanded(child: Divider()),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade300),
-          ),
-        ),
-        const Expanded(child: Divider()),
-      ],
     );
   }
 

@@ -79,7 +79,14 @@ class Throttler<T> {
   }
 
   /// Immediately forces an update with the [maxValue] and synchronizes the internal state.
+  ///
+  /// It includes an idempotency check to prevent redundant updates if the state
+  /// is already at [maxValue], optimizing performance for high-frequency sync tasks.
   void flush([T? extra]) {
+    // Prevent redundant emissions if the difference is within the allowed precision.
+    // This effectively reduces unnecessary UI rebuilds and duplicate log entries.
+    if ((maxValue - _lastValue).abs() < precision) return;
+
     _lastValue = maxValue;
     _lastUpdateTime = DateTime.now();
     onUpdate(maxValue, extra);
