@@ -1,4 +1,8 @@
 # .pubignore
-example/build/
+build/
 .dart_tool/
 .packages
+pubspec.lock
+example/build/
+*.dill
+*.cache
