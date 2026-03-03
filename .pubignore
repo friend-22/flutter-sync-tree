@@ -1,0 +1,4 @@
+# .pubignore
+example/build/
+.dart_tool/
+.packages
