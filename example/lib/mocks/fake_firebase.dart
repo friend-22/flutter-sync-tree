@@ -89,6 +89,8 @@ class LateFakeFirebaseLeaf extends FakeFirebaseLeaf {
     super.throttlerConfig,
   });
 
+  bool get isWaiting => !primary.isReceivedData;
+
   @override
   Future<void> performSync(FakeQuerySnapshot data, OnSyncOperation onSyncOper) async {
     //💡 Check Dependency: If the primary leaf isn't ready, fail intentionally.
@@ -152,10 +154,10 @@ class TwoWaySyncSimulator extends FakeQuerySnapshotSimulator {
 
     // Decide which controller gets the 'poisoned' data.
     final errData = shouldError ? generateNext(isError: true) : data;
-    final randBool = SyncSimulator.random.nextBool();
+    final isPoisonedFirst = SyncSimulator.random.nextBool();
 
     // Mimics real-world inconsistency where one stream might fail while others succeed.
-    lateController.add(randBool ? data : errData);
-    controller.add(randBool ? errData : data);
+    lateController.add(isPoisonedFirst ? data : errData);
+    controller.add(isPoisonedFirst ? errData : data);
   }
 }

@@ -4,6 +4,8 @@ import 'package:example/simulator/sync_simulator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
+import 'adaptive_scroll_view.dart';
+
 class DataInjectorPanel extends StatefulWidget {
   final SyncNode rootSync;
   final SyncSimulator userSim;
@@ -25,23 +27,27 @@ class DataInjectorPanel extends StatefulWidget {
 }
 
 class _DataInjectorPanelState extends State<DataInjectorPanel> {
-  final Map<SyncSimulator, bool> _isGlowActive = {};
-
-  Timer? _uiRefreshTimer;
+  final Map<SyncSimulator, ValueNotifier<bool>> _glowNotifiers = {};
+  Timer? _refreshTimer;
+  bool _isExpanded = true;
 
   @override
   void initState() {
     super.initState();
     _setupSimulatorListeners();
 
-    _uiRefreshTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (mounted) setState(() {});
     });
   }
 
   @override
   void dispose() {
-    _uiRefreshTimer?.cancel();
+    _refreshTimer?.cancel();
+
+    for (var notifier in _glowNotifiers.values) {
+      notifier.dispose();
+    }
     super.dispose();
   }
 
@@ -49,171 +55,257 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
     final simulators = [widget.userSim, widget.photoSim, widget.httpSim, widget.twoWaySim];
 
     for (var sim in simulators) {
-      _isGlowActive[sim] = false;
+      _glowNotifiers[sim] = ValueNotifier<bool>(false);
 
-      // Handle data injection events with visual feedback
       sim.onDataInjected = () async {
         if (!mounted) return;
-
-        // 1. Synchronously trigger the "Glow" effect
-        setState(() => _isGlowActive[sim] = true);
-
-        // 2. Perform asynchronous wait outside of setState
-        await Future.delayed(const Duration(milliseconds: 250));
-
-        // 3. Synchronously reset the state
-        if (mounted) {
-          setState(() => _isGlowActive[sim] = false);
-        }
+        _glowNotifiers[sim]!.value = true;
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        _glowNotifiers[sim]!.value = false;
       };
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blueGrey.shade100),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildHeader(),
-          const Divider(height: 16, thickness: 0.5),
-          Row(
-            spacing: 20,
-            mainAxisAlignment: .spaceAround,
-            children: [
-              _buildSlimControl("Users", widget.userSim, Colors.blue),
-              _buildSlimControl("Photos", widget.photoSim, Colors.purple),
-              _buildSlimControl("HTTP", widget.httpSim, Colors.orange),
-              _buildSlimControl("Two-Way", widget.twoWaySim, Colors.green),
-            ],
+    return RepaintBoundary(
+      child: Card(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.blueGrey.shade50),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          trailing: Icon(
+            _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+            color: Colors.blueGrey,
           ),
-        ],
+          onExpansionChanged: (expanded) => setState(() => _isExpanded = expanded),
+
+          title: _buildHeader(),
+
+          children: [
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            AdaptiveScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  _buildCompactTile("Users", widget.userSim, Colors.blue),
+                  const SizedBox(width: 12),
+                  _buildCompactTile("Photos", widget.photoSim, Colors.purple),
+                  const SizedBox(width: 12),
+                  _buildCompactTile("HTTP", widget.httpSim, Colors.orange),
+                  const SizedBox(width: 12),
+                  _buildCompactTile("Two-Way", widget.twoWaySim, Colors.green),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader() {
+    final activeCount = [
+      widget.userSim,
+      widget.photoSim,
+      widget.httpSim,
+      widget.twoWaySim,
+    ].where((s) => s.isWorking).length;
+
     return Row(
       children: [
-        const Icon(Icons.bolt, color: Colors.orangeAccent, size: 16),
-        const SizedBox(width: 6),
-        Text(
-          "DATA INJECTOR",
-          style: TextStyle(
-            color: Colors.blueGrey.shade800,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
+        const Icon(Icons.bolt_rounded, color: Colors.orangeAccent, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "TRAFFIC CONTROL",
+                style: TextStyle(
+                  color: Colors.blueGrey.shade900,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Text(
+                "SIMULATING REAL-TIME BURSTS",
+                style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 8, fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
         ),
-        const Spacer(),
-        Text(
-          "SIMULATE REAL-TIME BURSTS",
-          style: TextStyle(color: Colors.blueGrey.shade300, fontSize: 9, fontWeight: FontWeight.w500),
-        ),
+        _buildActiveBadge(activeCount),
       ],
     );
   }
 
-  Widget _buildSlimControl(String label, SyncSimulator sim, Color color) {
-    final bool active = _isGlowActive[sim] ?? false;
-
-    final double remaining = sim.remainingSeconds;
-    final double progress = 1.0 - (remaining / (sim.intervalMs / 1000));
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildGlowDot(active, sim.isWorking, color),
-            const SizedBox(width: 8),
-
-            Column(
+  Widget _buildCompactTile(String label, SyncSimulator sim, Color color) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _glowNotifiers[sim]!,
+      builder: (context, active, _) {
+        return RepaintBoundary(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: 140,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: sim.isWorking ? color.withValues(alpha: 0.03) : Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: active
+                    ? Colors.amber.shade400
+                    : (sim.isWorking ? color.withValues(alpha: 0.2) : Colors.transparent),
+                width: active ? 2.0 : 1.0,
+              ),
+            ),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: sim.isWorking ? Colors.blueGrey.shade900 : Colors.blueGrey.shade300,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (sim.isWorking)
-                  Text(
-                    "${remaining.toStringAsFixed(1)}s",
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: color.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    _buildStatusDot(active, sim.isWorking, color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: sim.isWorking ? Colors.blueGrey.shade800 : Colors.blueGrey.shade300,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (sim.isWorking) _buildErrorTrigger(sim),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [_buildTimerText(sim, color), _buildCustomSwitch(sim, color)],
+                ),
+                const SizedBox(height: 8),
+                _buildProgressBar(active, sim, color),
               ],
             ),
-
-            Transform.scale(
-              scale: 0.7,
-              child: Switch(
-                value: sim.isWorking,
-                activeThumbColor: color,
-                onChanged: (val) {
-                  val ? sim.start(widget.rootSync) : sim.stop();
-                  setState(() {});
-                },
-              ),
-            ),
-
-            _buildErrorBolt(sim),
-          ],
-        ),
-
-        if (sim.isWorking)
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 2),
-            child: SizedBox(
-              width: 80,
-              height: 2,
-              child: LinearProgressIndicator(
-                value: active ? 1.0 : progress,
-                backgroundColor: color.withValues(alpha: 0.1),
-                valueColor: AlwaysStoppedAnimation(active ? Colors.yellow : color),
-              ),
-            ),
           ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _buildGlowDot(bool active, bool isWorking, Color color) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      width: 15,
-      height: 15,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: active ? color : (isWorking ? color.withValues(alpha: 0.2) : Colors.grey.shade300),
-        boxShadow: active ? [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 6)] : [],
+  Widget _buildTimerText(SyncSimulator sim, Color color) {
+    return Text(
+      sim.isWorking ? "${sim.remainingSeconds.toStringAsFixed(1)}s" : "IDLE",
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w900,
+        color: sim.isWorking ? color : Colors.blueGrey.shade200,
+        fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );
   }
 
-  Widget _buildErrorBolt(SyncSimulator sim) {
-    if (!sim.isWorking) return const SizedBox(width: 20);
+  Widget _buildCustomSwitch(SyncSimulator sim, Color color) {
+    return GestureDetector(
+      onTap: () {
+        sim.isWorking ? sim.stop() : sim.start(widget.rootSync);
+        setState(() {});
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 30,
+        height: 16,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: sim.isWorking ? color : Colors.grey.shade300,
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 200),
+          alignment: sim.isWorking ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressBar(bool active, SyncSimulator sim, Color color) {
+    final double remaining = sim.remainingSeconds;
+    final double progress = 1.0 - (remaining / (sim.intervalMs / 1000));
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(3),
+      child: LinearProgressIndicator(
+        value: active ? 1.0 : (sim.isWorking ? progress : 0.0),
+        minHeight: 3,
+        backgroundColor: Colors.blueGrey.shade50,
+        valueColor: AlwaysStoppedAnimation(active ? Colors.amber.shade400 : color),
+      ),
+    );
+  }
+
+  Widget _buildStatusDot(bool active, bool isWorking, Color color) {
+    return Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? Colors.yellow : (isWorking ? color : Colors.grey.shade300),
+        boxShadow: active
+            ? [BoxShadow(color: Colors.yellow.withValues(alpha: 0.8), blurRadius: 2, spreadRadius: 1)]
+            : [],
+      ),
+    );
+  }
+
+  Widget _buildErrorTrigger(SyncSimulator sim) {
     return GestureDetector(
       onTap: () => setState(() => sim.triggerError()),
-      child: Icon(
-        Icons.flash_on,
-        size: 20,
-        color: sim.shouldError ? Colors.red : Colors.orange.withValues(alpha: 0.4),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: sim.shouldError ? Colors.red.withValues(alpha: 0.1) : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.flash_on,
+          size: 14,
+          color: sim.shouldError ? Colors.red : Colors.grey.withValues(alpha: 0.5),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveBadge(int activeCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: activeCount > 0 ? Colors.blue.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        "$activeCount ONLINE",
+        style: TextStyle(
+          color: activeCount > 0 ? Colors.blue.shade700 : Colors.grey,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }

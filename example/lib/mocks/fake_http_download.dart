@@ -95,10 +95,8 @@ class FakeHttpSimulator extends SyncSimulator<FakeDownloadPackage> {
     final step = 100 + SyncSimulator.random.nextInt(901);
 
     while (current < total) {
-      await Future.delayed(Duration(milliseconds: 30 + Random().nextInt(90)));
-      current += step;
-
-      if (current > total) current = total;
+      await Future.delayed(Duration(milliseconds: 50 + Random().nextInt(100)));
+      current = min(current + step, total);
       yield FakeDownloadSnapshot(current);
     }
 

@@ -73,121 +73,166 @@ class _SyncHeaderSectionState extends State<SyncHeaderSection> {
   @override
   Widget build(BuildContext context) {
     final statusColor = widget.node.statusColor;
-    String compositionSummary = _getCompositionSummary();
-
-    final message = widget.node.hasMessage ? widget.node.message! : '';
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.05),
-        border: Border(bottom: BorderSide(color: statusColor.withValues(alpha: 0.1))),
+        color: statusColor.withValues(alpha: 0.04),
+        border: Border(bottom: BorderSide(color: statusColor.withValues(alpha: 0.1), width: 1.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(widget.icon ?? Icons.folder_rounded, color: statusColor, size: 18),
-              const SizedBox(width: 8),
+              _buildFolderIcon(statusColor),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       (widget.node.key ?? 'Root').toUpperCase(),
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        letterSpacing: 0.5,
+                        color: Colors.blueGrey.shade900,
+                      ),
                     ),
-                    Text(
-                      compositionSummary,
-                      style: TextStyle(fontSize: 10, color: Colors.blueGrey.withAlpha(150)),
-                    ),
+                    const SizedBox(height: 2),
+                    _buildCompositionRow(),
                   ],
                 ),
               ),
-
-              const SizedBox(width: 8),
-
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_activeLeafs.isNotEmpty || _errorLeafs.isNotEmpty) _buildActivitySummary(),
-
-                  const SizedBox(width: 10),
-                  SummaryBadge(summary: widget.node.summary),
-                ],
-              ),
+              SummaryBadge(summary: widget.node.summary),
             ],
           ),
 
-          const SizedBox(height: 8),
-
+          const SizedBox(height: 16),
           ProgressBar(progress: widget.node.progress, color: statusColor),
-          const SizedBox(height: 8),
 
-          SyncStatusTag(label: widget.node.status.name.toUpperCase(), color: statusColor),
+          const SizedBox(height: 12),
+          _buildStatusAndActivity(statusColor),
 
-          if (message.isNotEmpty) ...[const SizedBox(height: 8), _buildMessage(message)],
+          if (widget.node.hasMessage) ...[
+            const SizedBox(height: 12),
+            _buildMessage(widget.node.message!, statusColor),
+          ],
         ],
       ),
     );
   }
 
-  String _getCompositionSummary() {
-    if (widget.node is! SyncComposite) return 'Individual Leaf Node';
+  Widget _buildFolderIcon(Color color) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+      child: Icon(widget.icon ?? Icons.account_tree_rounded, color: color, size: 20),
+    );
+  }
+
+  Widget _buildCompositionRow() {
+    if (widget.node is! SyncComposite) {
+      return const Text('LEAF NODE', style: TextStyle(fontSize: 9, color: Colors.grey));
+    }
 
     final children = (widget.node as SyncComposite).allChildren;
-    if (children.isEmpty) return 'No child nodes';
-
     final leafCount = children.whereType<SyncLeaf>().length;
     final compositeCount = children.whereType<SyncComposite>().length;
 
-    List<String> parts = [];
-    if (compositeCount > 0) parts.add('$compositeCount Group${compositeCount > 1 ? 's' : ''}');
-    if (leafCount > 0) parts.add('$leafCount Leaf${leafCount > 1 ? 'ves' : ''}');
-
-    return parts.join(' • ');
-  }
-
-  Widget _buildActivitySummary() {
     return Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.end,
-      spacing: 5,
       children: [
-        ..._activeLeafs.map((n) => MiniTag(label: n.key ?? '', color: Colors.blue)),
-        ..._errorLeafs.map((n) => MiniTag(label: n.key ?? '', color: Colors.red, isError: true)),
+        if (compositeCount > 0) ...[
+          const Icon(Icons.folder_open_rounded, size: 10, color: Colors.grey),
+          const SizedBox(width: 2),
+          Text(
+            '$compositeCount GROUPS',
+            style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 6),
+        ],
+        const Icon(Icons.insert_drive_file_outlined, size: 10, color: Colors.grey),
+        const SizedBox(width: 2),
+        Text(
+          '$leafCount LEAVES',
+          style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold),
+        ),
       ],
     );
   }
 
-  Widget _buildMessage(String message) {
-    return Container(
+  Widget _buildStatusAndActivity(Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SyncStatusTag(label: widget.node.status.name.toUpperCase(), color: color),
+            if (_activeLeafs.isNotEmpty || _errorLeafs.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                '• ${_activeLeafs.length} ACTIVE / ${_errorLeafs.length} ERR',
+                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade400),
+              ),
+            ],
+          ],
+        ),
+        if (_activeLeafs.isNotEmpty || _errorLeafs.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ..._activeLeafs.map(
+                  (n) => Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: MiniTag(label: n.key ?? '', color: Colors.blue),
+                  ),
+                ),
+                ..._errorLeafs.map(
+                  (n) => Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: MiniTag(label: n.key ?? '', color: Colors.red, isError: true),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMessage(String message, Color statusColor) {
+    final bool isError = widget.node.isError;
+    final Color color = isError ? Colors.red : statusColor;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red),
-          const SizedBox(width: 6),
+          Icon(isError ? Icons.warning_amber_rounded : Icons.info_outline_rounded, size: 14, color: color),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                color: Colors.red,
+              style: TextStyle(
+                color: color.withValues(alpha: 0.9),
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                height: 1.3,
+                height: 1.4,
               ),
-              maxLines: 5,
-              overflow: TextOverflow.ellipsis,
+              maxLines: 3,
             ),
           ),
         ],

@@ -24,6 +24,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+/// Main dashboard that demonstrates the orchestration of multiple sync strategies.
 class SyncTreeDashboard extends StatefulWidget {
   const SyncTreeDashboard({super.key});
 
@@ -32,22 +33,22 @@ class SyncTreeDashboard extends StatefulWidget {
 }
 
 class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
-  // Sync Entities: Composites represent groups, Leaves represent individual tasks.
+  // Sync Nodes
   late SyncComposite _rootSync, _firebaseGroup, _syncGroup;
   late SyncLeaf _userLeaf, _photoLeaf, _mediaLeaf;
   late FakeFirebaseLeaf _primaryLeaf;
   late LateFakeFirebaseLeaf _lateLeaf;
 
-  // Simulators: Used to mimic real-world data stream bursts.
+  // Simulators
   late SyncSimulator _userSim, _photoSim, _httpSim;
   late SyncSimulator _twoWaySim;
 
-  // StreamControllers: Act as the data source for each SyncLeaf.
-  final usersController = StreamController<FakeQuerySnapshot>.broadcast();
-  final photosController = StreamController<FakeQuerySnapshot>.broadcast();
-  final httpsController = StreamController<FakeDownloadPackage>.broadcast();
-  final primaryController = StreamController<FakeQuerySnapshot>.broadcast();
-  final lateController = StreamController<FakeQuerySnapshot>.broadcast();
+  // Controllers
+  final _usersCtrl = StreamController<FakeQuerySnapshot>.broadcast();
+  final _photosCtrl = StreamController<FakeQuerySnapshot>.broadcast();
+  final _httpsCtrl = StreamController<FakeDownloadPackage>.broadcast();
+  final _primaryCtrl = StreamController<FakeQuerySnapshot>.broadcast();
+  final _lateCtrl = StreamController<FakeQuerySnapshot>.broadcast();
 
   StreamSubscription<FakeQuerySnapshot>? _subPrimary;
 
@@ -56,149 +57,174 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
     super.initState();
     _initSimulators();
     _setupSyncTree();
-    _bindDependencyReset();
+
+    SyncLog.enableComposite = false;
+    SyncLog.enableLeaf = false;
+
+    // Reset primary status on every new data emission to simulate fresh sync cycles
+    _subPrimary = _primaryCtrl.stream.listen((_) => _primaryLeaf.resetDataStatus());
   }
 
-  /// Initializes mock data generators for demonstration purposes.
   void _initSimulators() {
-    _userSim = FakeQuerySnapshotSimulator(controller: usersController, maxCount: 40, minCount: 20);
-    _photoSim = FakeQuerySnapshotSimulator(controller: photosController, maxCount: 50, minCount: 30);
-    _httpSim = FakeHttpSimulator(controller: httpsController);
+    _userSim = FakeQuerySnapshotSimulator(controller: _usersCtrl, maxCount: 40, minCount: 20);
+    _photoSim = FakeQuerySnapshotSimulator(controller: _photosCtrl, maxCount: 50, minCount: 30);
+    _httpSim = FakeHttpSimulator(controller: _httpsCtrl);
     _twoWaySim = TwoWaySyncSimulator(
-      controller: primaryController,
-      lateController: lateController,
-      maxCount: 30,
-      minCount: 20,
-      intervalMs: 7000,
+      controller: _primaryCtrl,
+      lateController: _lateCtrl,
+      maxCount: 20,
+      minCount: 10,
+      intervalMs: 10000,
     );
   }
 
-  /// The heart of the architecture: Defining the hierarchical synchronization tree.
   void _setupSyncTree() {
-    // Group 1: Firebase Data Sync (Parallel execution by default within Composite)
-    _userLeaf = FakeFirebaseLeaf(key: 'User Profile', stream: usersController.stream);
-    _photoLeaf = FakeFirebaseLeaf(key: 'Gallery Photos', stream: photosController.stream);
+    // 1. Firebase Group: Simultaneous sync of users and photos
+    _userLeaf = FakeFirebaseLeaf(key: 'User Profile', stream: _usersCtrl.stream);
+    _photoLeaf = FakeFirebaseLeaf(key: 'Gallery Photos', stream: _photosCtrl.stream);
     _firebaseGroup = SyncComposite(key: 'Firebase Data', primarySyncs: [_userLeaf, _photoLeaf]);
 
-    // Group 2: Sequential Sync (LateSync waits for PrimarySync to complete)
-    _primaryLeaf = FakeFirebaseLeaf(key: 'Primary Sync', stream: primaryController.stream);
+    // 2. Dependency Group: 'Late Sync' waits for 'Primary Sync'
+    _primaryLeaf = FakeFirebaseLeaf(key: 'Primary Sync', stream: _primaryCtrl.stream);
     _lateLeaf = LateFakeFirebaseLeaf(
       key: 'Late Sync',
-      stream: lateController.stream,
+      stream: _lateCtrl.stream,
       primary: _primaryLeaf,
-      retryConfig: RetryConfig(onRetry: (tries) => _lateLeaf.onRetry(tries)),
+      retryConfig: RetryConfig(maxTryCount: 5, onRetry: (tries) => _lateLeaf.onRetry(tries)),
     );
-    _syncGroup = SyncComposite(key: 'Sync Group', primarySyncs: [_primaryLeaf, _lateLeaf]);
+    _syncGroup = SyncComposite(key: 'Sequential Sync', primarySyncs: [_primaryLeaf, _lateLeaf]);
 
-    // Group 3: App Root - Aggregating all groups into a single source of truth.
-    _mediaLeaf = FakeHttpDownloadLeaf(key: 'Resource Pack', stream: httpsController.stream);
+    // 3. HTTP Leaf: Continuous progress tracking
+    _mediaLeaf = FakeHttpDownloadLeaf(key: 'Resource Pack', stream: _httpsCtrl.stream);
+
+    // 4. Root Orchestrator
     _rootSync = SyncComposite(key: 'App Root Sync', primarySyncs: [_firebaseGroup, _syncGroup, _mediaLeaf]);
 
-    // Rebuild the UI whenever any node in the tree updates.
+    // Listen to global events to trigger UI updates
     _rootSync.events.listen((_) {
       if (mounted) setState(() {});
     });
   }
 
-  /// Custom logic to reset state when primary data changes.
-  void _bindDependencyReset() {
-    _subPrimary = primaryController.stream.listen((_) {
-      _primaryLeaf.resetDataStatus();
-    });
-  }
-
   @override
   Future<void> dispose() async {
-    // Clean up all simulators and stream controllers to prevent memory leaks.
-    _twoWaySim.stop();
-    _userSim.stop();
-    _photoSim.stop();
-    _httpSim.stop();
-    primaryController.close();
-    lateController.close();
-    usersController.close();
-    photosController.close();
-    httpsController.close();
-    await _rootSync.dispose();
+    for (var sim in [_userSim, _photoSim, _httpSim, _twoWaySim]) {
+      sim.stop();
+    }
+    for (var ctrl in [_usersCtrl, _photosCtrl, _httpsCtrl, _primaryCtrl, _lateCtrl]) {
+      ctrl.close();
+    }
 
-    // Disposing the root composite recursively disposes all child nodes.
     await _rootSync.dispose();
-
     await _subPrimary?.cancel();
     _subPrimary = null;
-
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final verticalGap = const SizedBox(height: 16);
-
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        title: const Text(
-          'EXPERT SYNC ENGINE',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.2),
-        ),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        children: [
-          _buildSectionTitle(Icons.tune_rounded, 'SIMULATION CONTROL'),
-          DataInjectorPanel(
-            rootSync: _rootSync,
-            userSim: _userSim,
-            photoSim: _photoSim,
-            httpSim: _httpSim,
-            twoWaySim: _twoWaySim,
+      backgroundColor: Colors.grey.shade50,
+      appBar: _buildAppBar(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white, Colors.grey.shade50],
           ),
-          verticalGap,
+        ),
+        child: Scrollbar(
+          thumbVisibility: true,
+          thickness: 3,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            children: [
+              SyncGlobalController(rootNode: _rootSync),
 
-          _buildSectionTitle(Icons.analytics_outlined, 'GLOBAL PERFORMANCE'),
-          SyncGlobalController(rootNode: _rootSync),
+              const SizedBox(height: 24),
+              _buildDividerWithLabel('NODE ARCHITECTURE'),
+              const SizedBox(height: 16),
 
-          const SizedBox(height: 32),
-          const Divider(thickness: 1, height: 1),
-
-          verticalGap,
-          _buildSectionTitle(Icons.account_tree_outlined, 'ROOT ORCHESTRATION'),
-          SyncNodeTile(parent: _rootSync, children: [_mediaLeaf], icon: Icons.account_tree),
-
-          verticalGap,
-          _buildSectionTitle(Icons.cloud_sync_outlined, 'FIREBASE CLUSTER'),
-          SyncNodeTile(parent: _firebaseGroup, children: [_userLeaf, _photoLeaf], icon: Icons.person),
-
-          verticalGap,
-          _buildSectionTitle(Icons.low_priority_rounded, 'DEPENDENCY PIPELINE'),
-          SyncNodeTile(parent: _syncGroup, children: [_primaryLeaf, _lateLeaf], icon: Icons.sync),
-        ],
+              _buildNodeList(),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: Container(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: DataInjectorPanel(
+          rootSync: _rootSync,
+          userSim: _userSim,
+          photoSim: _photoSim,
+          httpSim: _httpSim,
+          twoWaySim: _twoWaySim,
+        ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(IconData icon, String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 4),
-      child: Row(
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Column(
         children: [
-          Icon(icon, size: 18, color: Colors.blueGrey.shade700),
-          const SizedBox(width: 8),
+          const Text(
+            'SYNC ENGINE',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.5),
+          ),
           Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: Colors.blueGrey.shade800,
-              letterSpacing: 0.5,
-            ),
+            'REAL-TIME ORCHESTRATION',
+            style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade400),
           ),
         ],
       ),
+      centerTitle: true,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      backgroundColor: Colors.white.withValues(alpha: 0.9),
+    );
+  }
+
+  Widget _buildDividerWithLabel(String label) {
+    return Row(
+      children: [
+        const Expanded(child: Divider()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade300),
+          ),
+        ),
+        const Expanded(child: Divider()),
+      ],
+    );
+  }
+
+  Widget _buildNodeList() {
+    return Column(
+      children: [
+        SyncNodeTile(parent: _rootSync, children: [_mediaLeaf], icon: Icons.hub_rounded),
+        const SizedBox(height: 12),
+        SyncNodeTile(parent: _firebaseGroup, children: [_userLeaf, _photoLeaf], icon: Icons.storage_rounded),
+        const SizedBox(height: 12),
+        SyncNodeTile(
+          parent: _syncGroup,
+          children: [_primaryLeaf, _lateLeaf],
+          icon: Icons.account_tree_rounded,
+        ),
+      ],
     );
   }
 }

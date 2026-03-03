@@ -13,81 +13,63 @@ class SyncChildRow extends StatelessWidget {
     return StreamBuilder(
       stream: node.events,
       builder: (context, _) {
-        final bool isError = node.isError;
-        final bool isLate = node is LateFakeFirebaseLeaf;
-        final lateNode = isLate ? node as LateFakeFirebaseLeaf : null;
+        final (isWaiting, retryCount, primaryKey) = switch (node) {
+          LateFakeFirebaseLeaf n => (n.isWaiting, n.retryCount, n.primary.key),
+          _ => (false, 0, null),
+        };
 
-        final bool isWaiting = isLate && !lateNode!.primary.isReceivedData && node.isSyncing;
-        final int retryCount = (isLate && isWaiting) ? lateNode.retryCount : 0;
-        final bool isRetrying = retryCount > 0;
-
+        final isError = node.isError;
         final statusColor = node.statusColor;
-        final Color rowBgColor = isError
-            ? Colors.red.withAlpha(15)
-            : (isWaiting ? Colors.orange.withAlpha(10) : Colors.transparent);
 
-        String statusLabel = '${(node.progress * 100).toInt()}%';
-        String subtitle = node.summary.toString();
+        String statusLabel = isError
+            ? 'FAILED'
+            : isWaiting
+            ? (retryCount > 0 ? 'RETRY $retryCount' : 'WAITING')
+            : '${(node.progress * 100).toInt()}%';
 
-        if (isError) {
-          statusLabel = 'FAILED';
-          subtitle = (node.message != null && node.message!.isNotEmpty)
-              ? node.message!
-              : 'Synchronization failed';
-        } else if (isWaiting) {
-          statusLabel = isRetrying ? 'RETRY $retryCount' : 'WAITING';
-          subtitle = 'Waiting for ${lateNode.primary.key}...';
-        }
+        String subtitle = isError
+            ? (node.message ?? 'Sync failed')
+            : isWaiting
+            ? 'Waiting for $primaryKey...'
+            : '';
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: rowBgColor,
-            border: (isError || isWaiting) ? Border(left: BorderSide(color: statusColor, width: 3)) : null,
+            color: isError ? Colors.red.withValues(alpha: 0.05) : Colors.transparent,
+            border: Border(
+              left: (isError || isWaiting) ? BorderSide(color: statusColor, width: 4) : BorderSide.none,
+            ),
           ),
           child: Row(
             children: [
-              _buildLeading(isError, isWaiting, isRetrying, node.progress, statusColor),
-              const SizedBox(width: 12),
+              _buildLeading(isError, isWaiting, retryCount > 0, node.progress, statusColor),
+              const SizedBox(width: 10),
 
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      node.key ?? 'UNKNOWN',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: isError ? Colors.red.shade900 : Colors.black87,
+                    _buildTitleRow(isError, isWaiting),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isError ? Colors.red : Colors.orange.shade800,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isError
-                            ? Colors.red.shade400
-                            : (isWaiting ? Colors.orange : Colors.grey.shade600),
-                        fontWeight: isError ? FontWeight.w500 : FontWeight.normal,
-                      ),
-                    ),
+                    ],
                   ],
                 ),
               ),
 
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    statusLabel,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: statusColor),
-                  ),
-                  const SizedBox(height: 2),
-                  StatusIcon(node: node, size: 14, isRetrying: isRetrying),
-                ],
-              ),
+              const SizedBox(width: 8),
+
+              _buildStatusTrailing(statusLabel, statusColor, retryCount > 0),
             ],
           ),
         );
@@ -95,13 +77,78 @@ class SyncChildRow extends StatelessWidget {
     );
   }
 
+  Widget _buildTitleRow(bool isError, bool isWaiting) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            node.key ?? 'UNKNOWN',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isError ? Colors.red.shade900 : Colors.blueGrey.shade900,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ),
+        if (!isError && !isWaiting && node.summary.totalCount > 0) ...[
+          _buildSeparator(),
+          Flexible(child: SummaryBadge(summary: node.summary, isCompact: true)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSeparator() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      width: 1,
+      height: 8,
+      color: Colors.blueGrey.withAlpha(30),
+    );
+  }
+
+  Widget _buildStatusTrailing(String label, Color color, bool isRetrying) {
+    return SizedBox(
+      width: 55,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: color, letterSpacing: -0.3),
+          ),
+          const SizedBox(height: 2),
+          StatusIcon(node: node, size: 13, isRetrying: isRetrying),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLeading(bool isError, bool isWaiting, bool isRetrying, double progress, Color color) {
     if (isError) {
-      return Icon(Icons.error_outline_rounded, color: color, size: 22);
+      return Icon(Icons.error_outline_rounded, color: color, size: 20, key: const ValueKey('error'));
     }
     if (isWaiting) {
-      return SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: color));
+      return Center(
+        key: const ValueKey('waiting'),
+        child: SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2, color: color),
+        ),
+      );
     }
-    return CircularIndicator(progress: progress, color: color, isRetrying: isRetrying);
+    return CircularIndicator(
+      key: const ValueKey('normal'),
+      progress: progress,
+      color: color,
+      isRetrying: isRetrying,
+    );
   }
 }
