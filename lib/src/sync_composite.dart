@@ -36,6 +36,8 @@ class SyncComposite extends SyncNode {
 
   bool _isDispatching = false;
 
+  bool _isNotifying = false;
+
   SyncComposite({
     super.key,
     this.throttlerConfig = const ThrottlerConfig(),
@@ -62,7 +64,7 @@ class SyncComposite extends SyncNode {
     // Set depth hierarchy recursively for all children
     _propagateDepth(depth);
 
-// Listen to child lifecycle events
+    // Listen to child lifecycle events
     for (final child in _children) {
       child.listen((status, origin) async {
         switch (status) {
@@ -158,37 +160,38 @@ class SyncComposite extends SyncNode {
 
   /// Finalizes the composite state once all children have reached a terminal state.
   void _notifyComplete() async {
-    if (_needsInitialization) return;
+    if (_needsInitialization || _isNotifying) return;
 
-    if (primarySyncs.length > 1) {
-      if (syncDelay > Duration.zero) {
-        _log('⏳ Waiting for sync delay: ${syncDelay.inMilliseconds}ms');
+    try {
+      if (primarySyncs.length > 1) {
+        if (syncDelay > Duration.zero) {
+          _log('⏳ Waiting for sync delay: ${syncDelay.inMilliseconds}ms');
+        }
+        syncDelay == Duration.zero ? await Future.microtask(() {}) : await Future.delayed(syncDelay);
       }
-      syncDelay == Duration.zero ? await Future.microtask(() {}) : await Future.delayed(syncDelay);
-    }
 
-    if (!isCompleted) {
-      _log('🔄 Synchronization still in progress... (Waiting for children)');
-      return;
-    }
-
-    _throttler.flush(this);
-
-    final hasError = _children.any((h) => h.isError);
-    final finalStatus = hasError ? SyncStatus.error : SyncStatus.complete;
-    final logMsg = hasError ? '🚨 Error: "$message"' : '✨ Done: $summary';
-
-    notify(finalStatus, origin: this, onNotify: () {
-      _log(logMsg);
-      if (hasError) {
-        _log('📊 Partial Success: $summary');
+      if (!isCompleted) {
+        _log('🔄 Synchronization still in progress... (Waiting for children)');
+        return;
       }
-    });
 
-    _throttler.reset();
-    _needsInitialization = true;
+      _throttler.flush(this);
 
-    if (_isRoot) SyncLog.clearLine();
+      final hasError = _children.any((h) => h.isError);
+      final finalStatus = hasError ? SyncStatus.error : SyncStatus.complete;
+      final logMsg = hasError ? '🚨 Error: "$message"' : '✨ Done: $summary';
+
+      notify(finalStatus, origin: this, onNotify: () {
+        _log(logMsg);
+        if (hasError) _log('📊 Partial Success: $summary');
+        if (_isRoot) SyncLog.clearLine();
+      });
+
+      _throttler.reset();
+      _needsInitialization = true;
+    } finally {
+      _isNotifying = false;
+    }
   }
 
   // --- Recursive Utilities ---

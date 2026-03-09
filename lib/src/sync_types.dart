@@ -195,7 +195,7 @@ class SyncLog {
   static void fromTree(String key, String message) {
     if (!enableComposite && !enableLeaf) return;
 
-    debugPrint('${_prefix(0, '🌲')} [Tree:$key] $message');
+    debugPrint('${_prefix(0, '🌲')}[$key] $message');
   }
 
   /// Logs a message from a [SyncComposite] node.
