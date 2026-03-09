@@ -37,7 +37,18 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
     _setupSimulatorListeners();
 
     _refreshTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (mounted && _isExpanded) setState(() {});
+      if (!mounted || !_isExpanded) return;
+
+      final hasActiveSim = [
+        widget.userSim,
+        widget.photoSim,
+        widget.httpSim,
+        widget.twoWaySim,
+      ].any((s) => s.canNodeEmit && s.isWorking);
+
+      if (hasActiveSim) {
+        setState(() {});
+      }
     });
   }
 
@@ -205,12 +216,13 @@ class _DataInjectorPanelState extends State<DataInjectorPanel> {
   }
 
   Widget _buildTimerText(SyncSimulator sim, Color color) {
+    final canProceed = sim.isWorking && sim.canNodeProceed;
     return Text(
-      sim.isWorking ? "${sim.remainingSeconds.toStringAsFixed(1)}s" : "IDLE",
+      canProceed ? "${sim.remainingSeconds.toStringAsFixed(1)}s" : "IDLE",
       style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w900,
-        color: sim.isWorking ? color : Colors.blueGrey.shade200,
+        color: canProceed ? color : Colors.blueGrey.shade200,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

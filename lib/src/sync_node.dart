@@ -1,14 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 
 /// The base abstract class for all synchronization units, including Leaves and Composites.
 ///
 /// It establishes the standard lifecycle (start, stop, pause, resume)
-/// and provides a broadcast stream for real-time monitoring of the synchronization tree.
-abstract class SyncNode with SyncGetter {
+/// and implements [ChangeNotifier] to allow UI components to react to state changes.
+abstract class SyncNode with SyncGetter, ChangeNotifier {
   /// A unique identifier for the node, used for telemetry, logging, and searching.
   final String? key;
+
+  /// The depth level within the synchronization tree, used for formatted logging.
+  int depth = 0;
 
   final _syncController = StreamController<(SyncStatus, SyncNode)>.broadcast();
   final List<StreamSubscription> _internalSubs = [];
@@ -27,6 +31,8 @@ abstract class SyncNode with SyncGetter {
   Stream<(SyncStatus, SyncNode)> get events => _syncController.stream;
 
   /// Releases active resources, cancels internal subscriptions, and closes the event stream.
+  @override
+  @mustCallSuper
   Future<void> dispose() async {
     await stop();
 
@@ -38,20 +44,15 @@ abstract class SyncNode with SyncGetter {
     if (!_syncController.isClosed) {
       await _syncController.close();
     }
+
+    super.dispose();
   }
 
   /// Initiates the synchronization process for this node.
-  ///
-  /// Transitions the state to [SyncStatus.idle] to indicate it is ready for processing.
-  Future<void> start() async {
-    notify(SyncStatus.idle);
-    SyncLog.fromLeaf('$key', 'Transitioned to Idle');
-  }
+  Future<void> start();
 
-  /// Terminates the synchronization process and transitions the state to [SyncStatus.stop].
-  Future<void> stop() async {
-    notify(SyncStatus.stop);
-  }
+  /// Terminates the synchronization process.
+  Future<void> stop();
 
   /// Suspends the current synchronization task without releasing resources.
   void pause();
@@ -63,19 +64,25 @@ abstract class SyncNode with SyncGetter {
   ///
   /// The [origin] parameter allows parent nodes to propagate child events
   /// while preserving the identity of the node that generated the event.
-  void notify(SyncStatus status, {SyncNode? origin}) {
+  void notify(SyncStatus status, {SyncNode? origin, void Function()? onNotify}) {
     final bool isStatusChanged = _status != status;
     final bool isSyncing = status == SyncStatus.start || status == SyncStatus.progress;
 
-    // Prevents redundant notifications unless it's a critical state change
-    // or an active progress update.
+    // Skip redundant updates unless it's a critical state change or progress update
     if (!isStatusChanged && !hasMessage && !isSyncing) {
       return;
     }
 
     _status = status;
+
     if (!_syncController.isClosed) {
       _syncController.add((status, origin ?? this));
+
+      // Execute custom callback (e.g., logging or side-effects)
+      onNotify?.call();
+
+      // Notify Flutter UI listeners
+      notifyListeners();
     }
   }
 
@@ -145,7 +152,7 @@ class SyncTaskState {
       onUpdate: (p, node) {
         progress = p;
         onUpdate(node);
-        SyncLog.fromLeaf('${node?.key}', 'Progress updated: ${(progress * 100).toStringAsFixed(1)}%');
+        SyncLog.fromLeaf(node?.depth ?? 0, '${node?.key}', '🔄 Progress:', progress: p);
       },
     );
   }

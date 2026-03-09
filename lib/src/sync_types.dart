@@ -37,6 +37,8 @@ enum SyncStatus {
 /// This determines how a [SyncLeaf] handles transient failures by re-attempting
 /// operations with incrementally increasing delays to avoid server congestion.
 class RetryConfig extends Equatable {
+  static final _random = Random();
+
   /// The maximum number of retry attempts allowed before reporting a final [SyncStatus.error].
   ///
   /// Once this limit is reached, the error will be rethrown.
@@ -77,14 +79,27 @@ class RetryConfig extends Equatable {
     this.onRetry,
   });
 
-  /// Calculates the delay for a specific retry attempt.
+  /// Calculates the delay for a specific retry attempt including a randomized jitter.
   ///
   /// Returns [Duration.zero] if [retryCount] is 0.
   /// For [retryCount] > 0, calculates exponential delay based on [multiplier].
+  ///
+  /// Jitter helps prevent "Thundering Herd" problems where many clients
+  /// retry at the exact same millisecond.
   Duration getDelay(int retryCount) {
     if (retryCount <= 0) return Duration.zero;
+
+    // Calculate exponential backoff
     final int delay = baseDelayMs * pow(multiplier, retryCount - 1).toInt();
-    return Duration(milliseconds: delay);
+
+    // Calculate Jitter: +/- 10% of the delay (capped between 1ms and 1s)
+    final int maxJitter = (delay ~/ 10).clamp(1, 1000);
+    final int jitter = _random.nextInt(maxJitter);
+
+    // Final delay must not exceed the defined timeout
+    final int finalDelay = (delay + jitter).clamp(0, timeout.inMilliseconds);
+
+    return Duration(milliseconds: finalDelay);
   }
 
   RetryConfig copyWith({
@@ -164,21 +179,50 @@ class SyncLog {
   /// Whether to enable logs from [SyncLeaf] (Leaf) nodes.
   static bool enableLeaf = true;
 
+  static String _prefix(int depth, String icon) {
+    if (depth <= 0) return '$icon ';
+    String indent = '  ' * depth;
+    return '$indent$icon ';
+  }
+
+  /// Clears the line or adds a break for readability.
+  static void clearLine() {
+    if (!enableComposite && !enableLeaf) return;
+    debugPrint('');
+  }
+
   /// Logs a message from a root or high-level tree structure.
   static void fromTree(String key, String message) {
-    if (!enableComposite) return;
-    debugPrint('🌲 [Tree:$key] $message');
+    if (!enableComposite && !enableLeaf) return;
+
+    debugPrint('${_prefix(0, '🌲')} [Tree:$key] $message');
   }
 
   /// Logs a message from a [SyncComposite] node.
-  static void fromComposite(String key, String message) {
+  static void fromComposite(int depth, String key, String message, {double? progress}) {
     if (!enableComposite) return;
-    debugPrint('🌳 [Composite:$key] $message');
+
+    final String bar = progress != null ? ' ${_drawProgressBar(progress)}' : '';
+    debugPrint('${_prefix(depth, '🌳')}[$key] $message$bar');
   }
 
   /// Logs a message from a [SyncLeaf] node.
-  static void fromLeaf(String key, String message) {
+  static void fromLeaf(int depth, String key, String message, {double? progress}) {
     if (!enableLeaf) return;
-    debugPrint('🍃 [Leaf:$key] $message');
+
+    final String bar = progress != null ? ' ${_drawProgressBar(progress)}' : '';
+    debugPrint('${_prefix(depth, '🍃')}[$key] $message$bar');
+  }
+
+  /// Generates a visual progress bar: [████░░░░░░] 40.0%
+  static String _drawProgressBar(double progress) {
+    const int width = 10;
+    final double clamped = progress.clamp(0.0, 1.0);
+    final int filled = (clamped * width).toInt();
+
+    final String bar = '█' * filled + '░' * (width - filled);
+    final String percent = '${(clamped * 100).toStringAsFixed(1).padLeft(5)}%';
+
+    return '[$bar] $percent';
   }
 }

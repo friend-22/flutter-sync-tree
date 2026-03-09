@@ -11,9 +11,9 @@ class _SyncInterruptedException implements Exception {
 ///
 /// The generic type [T] represents the input data required for the operation.
 /// This class orchestrates the lifecycle of a single task, featuring:
-/// - Automatic retries with exponential backoff.
-/// - Progress throttling to optimize UI performance.
-/// - Interruptible execution (pause, resume, and stop).
+/// - **Automatic retries** with exponential backoff and jitter.
+/// - **Progress throttling** to prevent UI thread jank.
+/// - **Interruptible execution** (pause, resume, and stop support).
 abstract class SyncLeaf<T> extends SyncNode {
   /// Configuration for retry strategy and backoff timing.
   final RetryConfig retryConfig;
@@ -71,51 +71,70 @@ abstract class SyncLeaf<T> extends SyncNode {
   /// Manages the full execution lifecycle: Start -> Progress -> Completion or Error.
   Future<void> triggerSync(T data) async {
     if (isStopped || _isProcessing) return;
-    _isProcessing = true;
 
+    _isProcessing = true;
     await _waitIfPaused();
 
     try {
       _state.reset();
-      _state.setTotal(getTotalCount(data));
+
+      final total = getTotalCount(data);
+      _state.setTotal(total);
 
       // Immediate completion if there is no workload to process.
-      if (_state.total == 0) {
-        notify(SyncStatus.complete);
+      if (total == 0) {
+        notify(SyncStatus.complete, onNotify: () {
+          _log('📭 No items to synchronize. Skipping...');
+        });
         return;
       }
 
-      notify(SyncStatus.start);
-      SyncLog.fromLeaf('$key', 'Workload started: ${_state.total} items');
+      notify(SyncStatus.start, onNotify: () {
+        _log('🚀 Started: ${_state.total} items');
+      });
 
       // Executes the task wrapped in retry and timeout logic.
-      await _runWithRetry(() {
-        return performSync(data, (operation, {int count = 1}) async {
-          await _waitIfPaused();
-          if (isStopped) throw const _SyncInterruptedException();
-          _state.step(operation, this, count: count);
-        });
-      });
+      await _runWithRetry(() => performSync(data, _handleOperation));
 
       if (!isStopped) {
         _state.flush(this);
-        notify(SyncStatus.complete);
-        SyncLog.fromLeaf('$key', 'Workload completed: ${_state.summary}');
+        notify(SyncStatus.complete, onNotify: () {
+          _log('✅ Done: ${_state.summary}');
+        });
       }
     } catch (e) {
-      if (e is _SyncInterruptedException || isStopped) {
-        SyncLog.fromLeaf('$key', 'Terminated by user');
-      } else {
-        _state.message = e.toString();
-        notify(SyncStatus.error);
-        SyncLog.fromLeaf('$key', 'Failed: ${_state.message}');
-      }
+      _handleError(e);
     } finally {
       _isProcessing = false;
     }
   }
 
-  /// Internal wrapper that handles retry logic with an exponential backoff strategy.
+  /// Internal handler for each step of the synchronization.
+  ///
+  /// Ensures that pause and stop signals are respected during processing.
+  Future<void> _handleOperation(String operation, {int count = 1}) async {
+    await _waitIfPaused();
+
+    if (isStopped) {
+      throw const _SyncInterruptedException();
+    }
+
+    _state.step(operation, this, count: count);
+  }
+
+  /// Categorizes and logs errors, updating the node status to [SyncStatus.error].
+  void _handleError(Object e) {
+    if (e is _SyncInterruptedException || isStopped) {
+      _log('Terminated by user');
+    } else {
+      _state.message = e.toString();
+      notify(SyncStatus.error, onNotify: () {
+        _log('🚨 Error: "${_state.message}"');
+      });
+    }
+  }
+
+  /// Orchestrates retry logic using the configured [RetryConfig].
   Future<void> _runWithRetry(Future<void> Function() task) async {
     int retryCount = 0;
 
@@ -127,16 +146,16 @@ abstract class SyncLeaf<T> extends SyncNode {
         await task().timeout(retryConfig.timeout);
         return;
       } catch (e) {
-        await _waitIfPaused();
+        // If the task was manually stopped, don't retry.
+        if (e is _SyncInterruptedException) rethrow;
 
-        if (isStopped) rethrow;
+        await _waitIfPaused();
+        if (isStopped) return;
 
         retryCount++;
-        SyncLog.fromLeaf('$key', 'Retry attempt: $retryCount/${retryConfig.maxTryCount}');
+        if (retryCount > retryConfig.maxTryCount) rethrow;
 
-        if (retryCount > retryConfig.maxTryCount || isStopped) {
-          rethrow;
-        }
+        _log('♻️ Retry: $retryCount/${retryConfig.maxTryCount}');
 
         // Notify subscribers of the retry attempt.
         retryConfig.onRetry?.call(retryCount);
@@ -149,7 +168,9 @@ abstract class SyncLeaf<T> extends SyncNode {
 
   @override
   Future<void> dispose() async {
-    _resumeCompleter?.complete();
+    if (_resumeCompleter != null && !_resumeCompleter!.isCompleted) {
+      _resumeCompleter!.complete();
+    }
     _resumeCompleter = null;
     await super.dispose();
   }
@@ -157,20 +178,20 @@ abstract class SyncLeaf<T> extends SyncNode {
   @override
   Future<void> start() async {
     _isProcessing = false;
-    await super.start();
+    notify(SyncStatus.idle, onNotify: () => _log('⚙️ Ready'));
   }
 
   @override
   Future<void> stop() async {
     _state.reset();
     _isProcessing = false;
-    await super.stop();
+    notify(SyncStatus.stop, onNotify: () => _log('🛑 Stopped'));
   }
 
   @override
   void pause() {
     if (!isPaused) {
-      notify(SyncStatus.pause);
+      notify(SyncStatus.pause, onNotify: () => _log('⏳ Paused'));
     }
   }
 
@@ -179,7 +200,15 @@ abstract class SyncLeaf<T> extends SyncNode {
     if (isPaused) {
       _resumeCompleter?.complete();
       _resumeCompleter = null;
-      notify(SyncStatus.progress);
+
+      // Maintain progress state or return to idle if not started
+      if (totalCount > 0 || completedCount > 0) {
+        notify(SyncStatus.progress);
+      } else {
+        notify(SyncStatus.idle);
+      }
+
+      _log('⏳ Resume');
     }
   }
 
@@ -187,14 +216,19 @@ abstract class SyncLeaf<T> extends SyncNode {
   Future<void> _waitIfPaused() async {
     if (!isPaused) return;
 
-    SyncLog.fromLeaf('$key', 'Execution suspended (Paused)');
+    _log('⏳ Execution suspended (Paused)');
     _resumeCompleter ??= Completer<void>();
     await _resumeCompleter!.future;
   }
 
-  /// Resets the internal state and transitions the node to the [SyncStatus.idle] state.
+  /// Completely resets the task state to its initial configuration.
   void reset() {
     _state.reset();
-    notify(SyncStatus.idle);
+    notify(SyncStatus.idle, onNotify: () => _log('⚙️ Reset: Ready for next sync'));
+  }
+
+  /// Internal logging helper that respects the tree depth.
+  void _log(String message) {
+    SyncLog.fromLeaf(depth, '$key', message);
   }
 }

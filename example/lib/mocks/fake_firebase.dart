@@ -96,7 +96,7 @@ class LateFakeFirebaseLeaf extends FakeFirebaseLeaf {
     //💡 Check Dependency: If the primary leaf isn't ready, fail intentionally.
     // The SyncTree's Retry mechanism will catch this and try again based on RetryConfig.
     if (!primary.isReceivedData) {
-      SyncLog.fromLeaf('$key', 'Waiting for ${primary.key}...');
+      SyncLog.fromLeaf(depth, '$key', '💥 Waiting for [${primary.key}]');
       throw Exception('Dependency not met: ${primary.key}');
     }
 

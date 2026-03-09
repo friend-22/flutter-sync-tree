@@ -1,10 +1,14 @@
-## 1.0.5
+## 1.0.6
+* **FEAT**: Added `ChangeNotifier` to `SyncNode` for seamless Flutter UI integration ("Change Me").
+* **FEAT**: Introduced `depth` propagation in `SyncComposite` for hierarchical tree logging.
+* **IMPROVE**: Refined `SyncLeaf` with helper methods (`_handleOperation`, `_handleError`) for better maintainability.
+* **FIX**: Added `_isDispatching` guard in `SyncComposite` to prevent premature `isCompleted` signals during initialization.
 
+## 1.0.5
 * **Optimization**: Enhanced `Throttler.flush` with idempotency logic to prevent redundant event emissions.
   * Added a precision-based check to skip updates if the value has already reached `maxValue`.
   
 ## 1.0.4
-
 * Added Web Demo support with GitHub Pages.
 * Improved README with live preview and architectural diagrams.
 
@@ -34,7 +38,6 @@
   - **API Fixes**: Corrected method naming in example snippets to match the updated 1.0.3 API.
 
 ## 1.0.2
-
 ### 🔄 Breaking Changes
 * **Naming Alignment**: Renamed `SyncType` to `SyncStatus` for better semantic clarity and state representation.
 * **Stream Renaming**: Renamed `syncStream` to `events` in `SyncNode` to follow standard event-driven naming conventions.

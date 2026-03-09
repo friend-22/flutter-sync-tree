@@ -45,6 +45,8 @@ Designed for applications handling **large-scale real-time data** (like Firebase
   * **Phase Management**: Execute tasks in `Primary` (parallel) or `Late` (sequential) phases.
 * **📊 Granular Statistics**: Track specific operation metrics including `total`, `add`, `update`, `remove`, `latest`, and `recover`.
 * **🎯 Origin Tracking**: Precisely identify which node triggered an event, even within deeply nested trees.
+* **🎨 Flutter Native Integration**: Built-in ChangeNotifier support. Use ListenableBuilder to build reactive UIs without complex Stream plumbing.
+* **🌲 Hierarchical Logging**: Automatic depth propagation provides beautiful, indented console logs that mirror your sync tree structure.
 
 ---
 

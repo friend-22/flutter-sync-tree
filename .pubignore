@@ -1,4 +1,5 @@
 # .pubignore
+.metadata
 build/
 .dart_tool/
 .packages

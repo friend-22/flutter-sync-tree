@@ -58,8 +58,8 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
     _initSimulators();
     _setupSyncTree();
 
-    SyncLog.enableComposite = false;
-    SyncLog.enableLeaf = false;
+    SyncLog.enableComposite = true;
+    SyncLog.enableLeaf = true;
 
     // Reset primary status on every new data emission to simulate fresh sync cycles
     _subPrimary = _primaryCtrl.stream.listen((_) => _primaryLeaf.resetDataStatus());
@@ -92,18 +92,13 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
       primary: _primaryLeaf,
       retryConfig: RetryConfig(maxTryCount: 5, onRetry: (tries) => _lateLeaf.onRetry(tries)),
     );
-    _syncGroup = SyncComposite(key: 'Sequential Sync', primarySyncs: [_primaryLeaf, _lateLeaf]);
+    _syncGroup = SyncComposite(key: 'Sequential Sync', primarySyncs: [_primaryLeaf], lateSyncs: [_lateLeaf]);
 
     // 3. HTTP Leaf: Continuous progress tracking
     _mediaLeaf = FakeHttpDownloadLeaf(key: 'Resource Pack', stream: _httpsCtrl.stream);
 
     // 4. Root Orchestrator
     _rootSync = SyncComposite(key: 'App Root Sync', primarySyncs: [_firebaseGroup, _syncGroup, _mediaLeaf]);
-
-    // Listen to global events to trigger UI updates
-    _rootSync.events.listen((_) {
-      if (mounted) setState(() {});
-    });
   }
 
   @override
@@ -126,29 +121,34 @@ class _SyncTreeDashboardState extends State<SyncTreeDashboard> {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: SyncGlobalController(rootNode: _rootSync),
-          ),
+      body: ListenableBuilder(
+        listenable: _rootSync,
+        builder: (context, _) {
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: SyncGlobalController(rootNode: _rootSync),
+              ),
 
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              children: [_buildNodeList()],
-            ),
-          ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                  children: [_buildNodeList()],
+                ),
+              ),
 
-          const Divider(height: 1, color: Colors.black12),
-          DataInjectorPanel(
-            rootSync: _rootSync,
-            userSim: _userSim,
-            photoSim: _photoSim,
-            httpSim: _httpSim,
-            twoWaySim: _twoWaySim,
-          ),
-        ],
+              const Divider(height: 1, color: Colors.black12),
+              DataInjectorPanel(
+                rootSync: _rootSync,
+                userSim: _userSim,
+                photoSim: _photoSim,
+                httpSim: _httpSim,
+                twoWaySim: _twoWaySim,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
