@@ -1,3 +1,10 @@
+## 1.0.7
+* **Fixed**: Resolved a race condition where multiple synchronization notifications were triggered simultaneously when children finished at the same time.
+
+* **Improved**: Optimized the SyncTreeNotifier logging system to prevent duplicate "Done" and "Progress" messages.
+
+* **Refactored**: Enhanced the internal _notifyComplete logic with a synchronization lock to ensure state consistency.
+
 ## 1.0.6
 * **FEAT**: Added `ChangeNotifier` to `SyncNode` for seamless Flutter UI integration ("Change Me").
 * **FEAT**: Introduced `depth` propagation in `SyncComposite` for hierarchical tree logging.
