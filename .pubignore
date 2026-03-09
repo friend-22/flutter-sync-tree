@@ -7,3 +7,4 @@ pubspec.lock
 example/build/
 *.dill
 *.cache
+deploy_web.bat

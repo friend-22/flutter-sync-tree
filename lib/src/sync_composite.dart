@@ -161,6 +161,7 @@ class SyncComposite extends SyncNode {
   /// Finalizes the composite state once all children have reached a terminal state.
   void _notifyComplete() async {
     if (_needsInitialization || _isNotifying) return;
+    _isNotifying = true;
 
     try {
       if (primarySyncs.length > 1) {

@@ -1,3 +1,6 @@
+## 1.0.8
+* fix: Enforce notification lock to prevent duplicate sync logs and redundant updates.
+
 ## 1.0.7
 * **Fixed**: Resolved a race condition where multiple synchronization notifications were triggered simultaneously when children finished at the same time.
 
