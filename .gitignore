@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/release
 
 deploy_web.bat
+example/windows/flutter/generated_plugin_registrant.cc
+example/windows/flutter/generated_plugin_registrant.h
+example/windows/flutter/generated_plugins.cmake
