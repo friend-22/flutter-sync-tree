@@ -1,3 +1,18 @@
+## 1.0.9
+### Fixed
+- Fixed potential state corruption in `_notifyComplete()` where `_needsInitialization` and `_throttler` were not properly reset when sync completed while a stop was in progress
+- Fixed `SyncInProgress.props` using raw `double` for `origin.progress`, which could cause unnecessary state rebuilds due to floating-point precision issues
+
+### Improved
+- `_notifyComplete()` now evaluates `isCompleted` exactly once after the sync delay, ensuring consistent snapshot behavior and eliminating redundant state checks
+- `SyncState.props` now rounds progress to 3 decimal places (`(progress * 1000).round()`) to prevent spurious equality mismatches
+- `SyncComposite.dispose()` now properly disposes all child nodes, preventing stream subscription leaks in long-running applications
+
+### Added
+- `maxJitterMs` parameter added to `RetryConfig`, allowing fine-grained control over the upper bound of retry jitter (previously hardcoded to 1,000ms)
+- `RetryConfig.copyWith()` now includes `maxJitterMs`
+- `maxJitterMs` is now included in `RetryConfig.props` for correct equality comparison
+
 ## 1.0.8
 * fix: Enforce notification lock to prevent duplicate sync logs and redundant updates.
 

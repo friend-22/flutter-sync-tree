@@ -1,5 +1,5 @@
 import 'package:example/mocks/fake_firebase.dart';
-import 'package:example/widgets/syc_helper.dart';
+import 'package:example/widgets/sync_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sync_tree/flutter_sync_tree.dart';
 

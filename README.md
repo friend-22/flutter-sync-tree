@@ -1,124 +1,111 @@
-<div align="center"> 
-# 🚀 Throttled Sync Tree 
+<div align="center">
 
-**A robust, high-performance synchronization framework for Flutter and Dart.** 
+<h1>🌲 flutter_sync_tree</h1>
 
-[![Live Demo](https://img.shields.io/badge/demo-live_preview-blueviolet?style=for-the-badge&logo=flutter)](https://friend-22.github.io/flutter-sync-tree/)
+<p>A robust, high-performance synchronization framework for Flutter and Dart.<br/>
+Manage complex multi-stage data pipelines with weighted progress, intelligent throttling, and resilient flow control.</p>
+
+[![Pub Version](https://img.shields.io/pub/v/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white&color=0175C2)](https://pub.dev/packages/flutter_sync_tree)
+[![Pub Points](https://img.shields.io/pub/points/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white&color=0175C2)](https://pub.dev/packages/flutter_sync_tree)
+[![Pub Likes](https://img.shields.io/pub/likes/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white&color=0175C2)](https://pub.dev/packages/flutter_sync_tree)
+[![Live Demo](https://img.shields.io/badge/▶_Live_Demo-blueviolet?style=for-the-badge&logo=flutter&logoColor=white)](https://friend-22.github.io/flutter-sync-tree/)
+
 <br/>
-[![Pub Version](https://img.shields.io/pub/v/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
-[![Pub Likes](https://img.shields.io/pub/likes/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
-[![Pub Points](https://img.shields.io/pub/points/flutter_sync_tree?style=for-the-badge&logo=dart&logoColor=white)](https://pub.dev/packages/flutter_sync_tree)
 
---- 
-
-It manages complex, multi-layered data synchronization with **weighted progress calculation**, <br/>**intelligent throttling**, and **resilient flow control**.
-
-<table align="center"> 
-	<tr> 
-		<td align="center" width="50%"><b>Sequential Phase (Late)</b></td> 
-		<td align="center" width="50%"><b>Parallel Phase (Primary)</b></td>
-	</tr> 
-	<tr> 
-		<td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/late_sync.gif" width="100%"></td>
-		<td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/parallel_sync.gif" width="100%"></td>
-	</tr>
+<table>
+  <tr>
+    <td align="center"><b>Dependency Pipeline</b><br/><sub>Primary + Late phase composition</sub></td>
+    <td align="center"><b>Firebase Cluster</b><br/><sub>Parallel leaf nodes</sub></td>
+  </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/late_sync.gif" width="100%"/></td>
+    <td><img src="https://raw.githubusercontent.com/friend-22/flutter-sync-tree/main/assets/parallel_sync.gif" width="100%"/></td>
+  </tr>
 </table>
+
 </div>
 
-### ✨ Key Focus
-Designed for applications handling **large-scale real-time data** (like Firebase Cloud Firestore) or complex **multi-stage initialization sequences** where UI responsiveness is critical.
+<br/>
+
+## Why flutter_sync_tree?
+
+When syncing large datasets from Firebase or running multi-stage initialization, these problems arise:
+
+**Progress is a lie** — A 1-item task and a 1,000-item task should not each represent 50% of the bar.
+
+**UI jank** — Emitting thousands of state updates per second freezes the interface.
+
+**One listener, two views** — You want a single root to watch for overall status, but you also need to know *which specific node* just failed or progressed. Without origin tracking, you'd need a separate listener per task.
+
+**Rigid operation types** — Standard sync libraries give you `success` / `failure`. Real-world sync needs richer output: how many items were added vs. updated vs. already up-to-date vs. recovered after retry.
+
+`flutter_sync_tree` solves all of these. Progress is **weighted by actual workload**, updates pass through a configurable **throttle gate**, every event carries its **origin node**, and `SyncSummary` accepts **any string key** you define.
 
 ---
 
-## ✨ Key Features
+## Features
 
-* **🏗️ Hierarchical Structure**: Organize sync tasks into a tree using the **Composite Pattern**. 
- Manage individual `SyncLeaf` and grouped `SyncComposite` nodes through a unified interface.
-* **⚖️ Intelligent Weighted Progress**: Progress is calculated based on the actual workload volume (`totalCount`), 
- ensuring the progress bar reflects data reality rather than just the number of tasks.
-* **⚡ Performance-Optimized Throttling**: Prevents UI jank during high-frequency updates (e.g., initial 10k+ record syncs) 
- by gating updates through configurable thresholds and time intervals.
-* **🛡️ Resilient Flow Control**:
-  * **Pause & Resume**: Seamlessly suspend and restart synchronization tasks.
-  * **Smart Exponential Backoff**: Automatic retries with incrementally increasing delays.
-    * `Formula: baseDelay * (multiplier ^ (retryCount - 1))`
-  * **Phase Management**: Execute tasks in `Primary` (parallel) or `Late` (sequential) phases.
-* **📊 Granular Statistics**: Track specific operation metrics including `total`, `add`, `update`, `remove`, `latest`, and `recover`.
-* **🎯 Origin Tracking**: Precisely identify which node triggered an event, even within deeply nested trees.
-* **🎨 Flutter Native Integration**: Built-in ChangeNotifier support. Use ListenableBuilder to build reactive UIs without complex Stream plumbing.
-* **🌲 Hierarchical Logging**: Automatic depth propagation provides beautiful, indented console logs that mirror your sync tree structure.
+| | |
+|---|---|
+| 🏗️ **Composite Tree** | Nest `SyncLeaf` and `SyncComposite` nodes into arbitrarily deep hierarchies |
+| ⚖️ **Weighted Progress** | `completedCount / totalCount` across all children — not a naive average |
+| ⚡ **Throttled Updates** | Gate UI rebuilds by delta threshold *and* time interval |
+| 🔁 **Exponential Backoff** | Automatic retry with jitter: `baseDelay × multiplierⁿ` |
+| ⏸️ **Pause / Resume** | Suspend mid-flight without losing state; resume from the same point |
+| 📊 **Granular Stats** | Per-node `SyncSummary`: `add`, `update`, `remove`, `latest`, `recover` |
+| 🎯 **Origin Tracking** | Every event carries the node that first triggered it |
+| 🎨 **Flutter Native** | `ChangeNotifier` built-in — drop into any `ListenableBuilder` |
+| 🌲 **Structured Logs** | Depth-aware console output that mirrors your tree |
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
-Throttled Sync Tree follows the `Composite Design Pattern`. Every task is a `SyncNode`, allowing you to build deeply nested 
-synchronization logic that remains highly maintainable.
+Every unit in the tree is a `SyncNode`. The two concrete types share a unified interface:
 
-* **SyncNode**: The base abstraction for all units.
-* **SyncLeaf**: The worker node for concrete data processing (e.g., Cloud → Local DB).
-* **SyncComposite**: The coordinator node that aggregates children and calculates global progress.
-
-**Visual Tree Example**
-
-```text
-Root (SyncComposite)
- ├── Primary Phase (Parallel)
- │    ├── UserProfile (SyncLeaf) ── 100 items (High Weight ⚖️)
- │    └── AppSettings (SyncLeaf) ── 1 item    (Low Weight  ⚖️)
- └── Late Phase (Sequential/Parallel)
-      └── PhotoGallery (SyncComposite)
-           ├── AlbumMetadata (SyncLeaf)
-           └── HighResImages (SyncLeaf)
 ```
------
-
-## 📡 Event Propagation & Lifecycle
-
-`SyncComposite` acts as a central hub monitoring its children. It aggregates individual child events and re-broadcasts 
-them to the UI based on the configured throttling policy.
-
-
-| Phase | Child Event | Parent Status | Origin in Event | UI / Logic Impact                                                       |
-| :--- | :--- | :--- | :--- |:------------------------------------------------------------------------|
-| **Start** | `start` | **progress** | `Child` | **Live Tracking**: Displays a "Syncing" indicator for specific child.   |
-| **Progress** | `progress` | **progress** | `Child` | **Throttled Update**: Updates the parent's overall progress bar.        |
-| **Error (Transient)** | `error` | **progress** | `Child` | **Relay**: Parent remains active while the child handles retries.       |
-| **Complete (Single)** | `complete` | **progress** | `Child` | **Snapshot**: Saves child summary and recalculates total weight.        |
-| **Error (Final)** | `error` | **error** | `Parent` | **Failure**: Triggered if all retries fail or stopOnError is enabled.   |
-| **Complete (Final)** | `complete` | **complete** | `Parent` | **Success**: Triggered only when ALL children finish successfully.      |
-| **Control** | `stop / pause` | **stop / pause** | `Parent` | **Global State**: Transitions occur when all children reach this state. |
-
----
-
-## 💡 Key Architectural Concepts
-
-### 1\. Origin-Aware Events
-The origin parameter preserves the identity of the node where the event first occurred. 
-This allows the UI to display **granular updates** (e.g., "Updating User Profiles...") even when 
-listening to the top-level root node.
-
-### 2\. Cumulative Error Messaging
-The parent node's error message is reactively derived from its children, ensuring the most relevant 
-diagnostic info bubbles up to the top-level listener.
-```dart
-@override
-String? get message => _children
-    .map((node) => node.message)
-    .whereType<String>()
-    .lastOrNull; // Returns the most recent error message from any failing child.
+SyncNode  (abstract — lifecycle contract + ChangeNotifier)
+ ├── SyncLeaf<T>      executes actual work, owns Throttler + RetryConfig
+ └── SyncComposite    orchestrates children, aggregates progress & summary
 ```
 
-### 3\. Strict Success Policy
-A `SyncComposite` is considered successfully complete only if **every single child** reaches the `complete` state.
- If one child fails, the parent transitions to `error` to maintain data integrity across the system.
+**Example tree**
+
+```
+root  (SyncComposite)
+ ├── [Primary — parallel]
+ │    ├── user_profile   SyncLeaf  100 items  ████████ high weight
+ │    └── app_settings   SyncLeaf    1 item   ░ low weight
+ └── [Late — parallel, starts after primary]
+      └── photo_gallery  SyncComposite
+           ├── album_meta    SyncLeaf
+           └── hires_images  SyncLeaf
+```
 
 ---
-## 🚀 Getting Started
 
-### 1\. Define your SyncLeaf
+## Event Flow
 
-Extend `SyncLeaf` to implement your logic. Use `onSyncOper` to report different operation types.
+`SyncComposite` listens to every child and re-broadcasts aggregated events to the UI:
+
+| Child Event | Parent Emits | Origin | Notes |
+|:---|:---|:---|:---|
+| `start` | `progress` | child | Signals a specific task has begun |
+| `progress` | `progress` | child | Throttled; updates overall progress bar |
+| `complete` (partial) | `progress` | child | Snapshots child summary; waits for siblings |
+| `complete` (all done) | `complete` | **parent** | Terminal — all children finished |
+| `error` (all retries exhausted) | `error` | **parent** | Terminal — partial results in `summary` |
+| `stop` / `pause` | `stop` / `pause` | **parent** | Emitted once every child reaches the state |
+
+> Retries are handled silently inside `SyncLeaf`. No `error` event surfaces during retry attempts — only on final failure.
+
+**Completion rule**: a `SyncComposite` is complete when every child has reached a terminal state (`complete`, `error`, or `idle` — never `syncing`). If any child is in error the parent emits `SyncStatus.error`; otherwise `SyncStatus.complete`.
+
+---
+
+## Getting Started
+
+### 1 — Define your leaf
 
 ```dart
 class UserProfileSync extends SyncLeaf<List<Map<String, dynamic>>> {
@@ -132,8 +119,7 @@ class UserProfileSync extends SyncLeaf<List<Map<String, dynamic>>> {
 
   @override
   Future<void> start() async {
-    // ⚠️ Crucial: Always call super.start() to initialize lifecycle state.
-    await super.start();
+    await super.start(); // ⚠️ always call super — initializes lifecycle state
     _sub = stream.listen((snapshot) => triggerSync(snapshot));
   }
 
@@ -146,97 +132,113 @@ class UserProfileSync extends SyncLeaf<List<Map<String, dynamic>>> {
 
   @override
   Future<void> performSync(data, onSyncOper) async {
-    for (var item in data) {
-      // Check for 'Pause' or 'Stop' signals to keep the engine responsive.
+    for (final item in data) {
       if (item['isUpToDate'] == true) {
-        await onSyncOper(SyncSummary.latest); // Skip if no action required.
+        await onSyncOper(SyncSummary.latest);  // no-op at data layer
       } else {
-        await onSyncOper(SyncSummary.update); // Perform actual data update.
+        await onSyncOper(SyncSummary.update);  // write to local DB
       }
     }
   }
 }
 ```
 
-### 2\. Compose the Sync Tree
+### 2 — Compose the tree
 
 ```dart
-final syncTree = SyncComposite(
-  key: 'root_sync',
-  primarySyncs: [UserProfileSync(userStream), SettingsSync(settingsStream)],
-  lateSyncs: [LogHistorySync(logStream)],
-  stopOnError: true,
+final root = SyncComposite(
+  key: 'root',
+  primarySyncs: [
+    UserProfileSync(userStream),
+    SettingsSync(settingsStream),
+  ],
+  lateSyncs: [
+    LogHistorySync(logStream),
+  ],
+  stopOnError: false, // continue siblings on error; collect partial results
 );
+
+await root.start();
 ```
 
-### 3\. Listen to Reactive States
+### 3 — React to state
 
-Throttled Sync Tree provides a **Sealed Class** hierarchy for states, making it a perfect match for Flutter's pattern matching.
+`SyncState` is a sealed class — the compiler enforces exhaustive handling:
+
 ```dart
-// Convert events to SyncState using a BLoC, Riverpod, or ViewModel
-final message = switch (state) {
-  SyncInitial() => 'Ready to begin',
-  SyncInProgress(origin: var o) => 'Syncing ${o.key}... ${(o.progress * 100).toStringAsFixed(1)}%',
-  SyncFailure(message: var m) => 'Error: $m',
-  SyncSuccess() => 'Synchronization complete! 🚀',
-  SyncPaused() => 'Process paused',
-  _ => 'Processing...'
+final label = switch (state) {
+  SyncInitial()                 => 'Ready',
+  SyncInProgress(:final origin) => '${origin.key}: ${(origin.progress * 100).toStringAsFixed(1)}%',
+  SyncSuccess()                 => 'Done ✓',
+  SyncFailure(:final message)   => 'Error: $message',
+  SyncPaused()                  => 'Paused',
+  SyncStopped()                 => 'Stopped',
 };
 ```
 
------
+---
 
-## 🛠 Configurations
+## Configuration
 
-### ThrottlerConfig
+### `ThrottlerConfig`
 
-Fine-tune UI update frequency to save CPU cycles.
+Controls how often progress updates reach the UI.
 
-* `threshold`: Minimum % change (0.0 to 1.0) required to trigger an update.
-* `interval`: Minimum time duration between consecutive updates.
-
-### RetryConfig
-
-Control resilience and network behavior.
-
-* `maxTryCount`: The maximum number of additional attempts after the initial failure.
-* `baseDelayMs`: The starting delay (in ms) for the first retry.
-* `multiplier` : The factor by which the delay increases for each subsequent retry.
-* `timeout`: Time limit for a single synchronization attempt.
-
------
-
-## 📊 Why "Weighted" Progress?
-
-In a typical average-based system, a task with 1 item and a task with 1,000 items each represent 50% of the progress.
-In **Throttled Sync Tree**, the 1,000-item task correctly takes up **99.9%** of the progress bar weight.
-
-**Progress Formula:**
-```text
-                  Σ (Child Progress × Child Total Count)
-Total Progress = ────────────────────────────────────────
-                        Σ (All Child Total Counts)
+```dart
+const ThrottlerConfig(
+  threshold: 0.01,                         // min progress delta to emit (1%)
+  interval: Duration(milliseconds: 100),   // min time between emissions
+  precision: 1e-4,                         // float comparison tolerance
+)
 ```
 
------
+Use the built-in presets on `Throttler` for display-optimised rates:
 
-## 📜 License
+```dart
+Throttler.fps60(onUpdate: ...)  // 16ms interval, 0.5% threshold
+Throttler.fps30(onUpdate: ...)  // 33ms interval, 1.0% threshold
+```
 
-This project is licensed under the **MIT License**.
+### `RetryConfig`
 
------
+Controls retry behaviour and exponential backoff.
 
-## 👨‍💻 Author
+```dart
+const RetryConfig(
+  maxTryCount: 3,                          // retries after initial failure
+  baseDelayMs: 1000,                       // first retry delay: 1s
+  multiplier: 2.0,                         // delay doubles each retry
+  timeout: Duration(seconds: 30),          // per-attempt time limit
+  maxJitterMs: 1000,                       // jitter ceiling (thundering herd)
+)
+```
 
-**Jack (friend-22)** Email: [jack.leecnet@gmail.com](mailto:jack.leecnet@gmail.com)  
-Github: [friend-22/flutter-sync-tree](https://github.com/friend-22/flutter-sync-tree)
+Backoff formula: `delay = baseDelayMs × multiplier^(n−1) + jitter`
 
------
+---
 
-### 🙏 Acknowledgments
+## Weighted Progress Formula
 
-* **Riverpod/Bloc**: Inspiration for reactive state handling.
-* **Firebase**: Foundation for real-time stream handling.
-* **Gemini (Google AI)**: Supported architecture optimization and code refactoring.
+```
+                  Σ completedCount  (across all leaf nodes)
+Total Progress = ──────────────────────────────────────────
+                    Σ totalCount    (across all leaf nodes)
+```
 
------
+A 1,000-item leaf alongside a 1-item leaf: the large leaf drives **99.9%** of the bar — exactly as users expect.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Author
+
+**Jack (friend-22)** · [jack.leecnet@gmail.com](mailto:jack.leecnet@gmail.com) · [github.com/friend-22/flutter-sync-tree](https://github.com/friend-22/flutter-sync-tree)
+
+---
+
+<sub>Architecture review and code refinement assisted by Claude (Anthropic).</sub>

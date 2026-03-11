@@ -1,5 +1,5 @@
 import 'package:example/mocks/fake_http_download.dart';
-import 'package:example/widgets/syc_helper.dart';
+import 'package:example/widgets/sync_helper.dart';
 import 'package:flutter/material.dart';
 
 class DownloadNodeRow extends StatelessWidget {
